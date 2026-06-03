@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detrack — Weekly Job Board</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #EDF4FB;
+    --surface: #F7FBFF;
+    --surface2: #DEEcF8;
+    --border: rgba(30,90,160,0.10);
+    --border-med: rgba(30,90,160,0.18);
+    --text: #1A3550;
+    --text-muted: #4A6A8A;
+    --text-faint: #7A9AB8;
+    --accent: #E87722;
+    --accent-light: #FFF0E0;
+    --info-recv-bg: #DAEAF8;
+    --info-recv-text: #1A4F82;
+    --info-recv-border: #90BDE8;
+    --in-transit-bg: #FFF0D6;
+    --in-transit-text: #8A4200;
+    --in-transit-border: #F5A623;
+    --unassigned-bg: #F0F4F8;
+    --unassigned-text: #4A6A8A;
+    --completed-bg: #DDF4E8;
+    --completed-text: #1A6B3C;
+    --completed-border: #7ED4A8;
+    --failed-bg: #FDEAEA;
+    --failed-text: #A32D2D;
+    --failed-border: #F0A0A0;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  /* dark mode disabled — forced light */
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  header {
+    background: #1E5FA0;
+    border-bottom: none;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo {
+    width: 28px;
+    height: 28px;
+    background: #E87722;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .logo svg { width: 16px; height: 16px; fill: white; }
+
+  h1 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #ffffff;
+    letter-spacing: -0.01em;
+  }
+
+  .week-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .week-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.90);
+    min-width: 160px;
+    text-align: center;
+  }
+
+  .nav-btn {
+    background: rgba(255,255,255,0.15);
+    border: 0.5px solid rgba(255,255,255,0.30);
+    border-radius: var(--radius-sm);
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #ffffff;
+    font-size: 14px;
+    transition: background 0.15s;
+  }
+
+  .nav-btn:hover { background: rgba(255,255,255,0.25); }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #ccc;
+    display: inline-block;
+    margin-right: 5px;
+  }
+  .status-dot.live { background: #E87722; }
+  .status-dot.loading { background: rgba(255,255,255,0.6); animation: pulse 1s infinite; }
+  .status-dot.error { background: #E24B4A; }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .last-updated {
+    font-size: 12px;
+    color: rgba(255,255,255,0.70);
+  }
+
+  .refresh-btn {
+    background: #E87722;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .refresh-btn:hover { opacity: 0.8; }
+  .refresh-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .main {
+    padding: 20px 24px;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .badge-info { background: var(--info-recv-bg); color: var(--info-recv-text); border: 0.5px solid var(--info-recv-border); }
+  .badge-transit { background: var(--in-transit-bg); color: var(--in-transit-text); border: 0.5px solid var(--in-transit-border); }
+  .badge-completed { background: var(--completed-bg); color: var(--completed-text); border: 0.5px solid var(--completed-border); }
+  .badge-failed { background: var(--failed-bg); color: var(--failed-text); border: 0.5px solid var(--failed-border); }
+  .badge-unassigned { background: var(--unassigned-bg); color: var(--unassigned-text); }
+
+  .grid-wrapper {
+    overflow-x: auto;
+  }
+
+  .grid {
+    display: grid;
+    min-width: 900px;
+    border: 0.5px solid var(--border-med);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface);
+  }
+
+  .grid-header {
+    display: contents;
+  }
+
+  .col-vehicle {
+    width: 170px;
+  }
+
+  .cell {
+    border-right: 0.5px solid var(--border);
+    border-bottom: 0.5px solid var(--border);
+    padding: 10px 12px;
+    min-height: 60px;
+    vertical-align: top;
+  }
+
+  .cell:last-child { border-right: none; }
+
+  .cell-head {
+    background: var(--surface2);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 8px 12px;
+    min-height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .cell-head .date-num {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .cell-head.today {
+    background: #DAEAF8;
+  }
+
+  .cell-head.today .day-name,
+  .cell-head.today .date-num {
+    color: #1A5FA0;
+  }
+
+  .vehicle-header {
+    background: var(--surface2);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-right: 0.5px solid var(--border);
+    border-bottom: 0.5px solid var(--border);
+  }
+
+  .vehicle-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #FFF0D6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #E87722;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .vehicle-icon.unassigned {
+    background: var(--unassigned-bg);
+    color: var(--unassigned-text);
+  }
+
+  .vehicle-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+  }
+
+  .job-card {
+    background: var(--surface2);
+    border-radius: var(--radius-sm);
+    padding: 7px 9px;
+    margin-bottom: 6px;
+    border: 0.5px solid var(--border);
+    cursor: default;
+    transition: border-color 0.15s;
+  }
+
+  .job-card:hover { border-color: var(--border-med); }
+  .job-card:last-child { margin-bottom: 0; }
+
+  .job-do {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .job-name {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+  }
+
+  .job-address {
+    font-size: 10px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+  }
+
+  .job-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .job-time {
+    font-size: 10px;
+    color: var(--text-faint);
+    font-weight: 500;
+  }
+
+  .empty-cell {
+    font-size: 11px;
+    color: var(--text-faint);
+    font-style: italic;
+  }
+
+  .error-banner {
+    background: #FCEBEB;
+    border: 0.5px solid #F09595;
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #A32D2D;
+    margin-bottom: 16px;
+    display: none;
+  }
+
+  .loading-overlay {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border-med);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .summary-bar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .summary-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border-med);
+    border-radius: var(--radius-sm);
+    padding: 8px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 100px;
+  }
+
+  .summary-label { font-size: 11px; color: var(--text-faint); }
+  .summary-value { font-size: 20px; font-weight: 700; color: var(--text); }
+
+  .tooltip {
+    position: fixed;
+    z-index: 999;
+    background: var(--text);
+    color: var(--bg);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    max-width: 220px;
+    pointer-events: none;
+    display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+
+  .tooltip-row { display: flex; gap: 8px; }
+  .tooltip-label { color: rgba(255,255,255,0.6); min-width: 60px; }
+  .tooltip-val { font-weight: 500; }
+
+  .search-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    background: var(--surface);
+    border: 0.5px solid var(--border-med);
+    border-radius: var(--radius);
+    padding: 8px 14px;
+  }
+
+  .search-icon {
+    color: var(--text-faint);
+    font-size: 15px;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  #searchInput {
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 14px;
+    color: var(--text);
+    flex: 1;
+    font-family: var(--font);
+  }
+
+  #searchInput::placeholder { color: var(--text-faint); }
+
+  .search-clear {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-faint);
+    font-size: 16px;
+    padding: 0 2px;
+    line-height: 1;
+    display: none;
+  }
+
+  .search-count {
+    font-size: 12px;
+    color: var(--text-faint);
+    white-space: nowrap;
+  }
+
+  .job-card.search-hidden { display: none; }
+  .job-card.search-highlight { outline: 2px solid #E87722; outline-offset: 1px; }
+  .job-card { cursor: grab; }
+  .job-card:hover { border-color: #1E5FA0; box-shadow: 0 2px 8px rgba(30,95,160,0.12); }
+  .job-card.dragging { opacity: 0.35; cursor: grabbing; }
+  .job-card.no-drag { cursor: pointer; }
+  .cell.drag-over { outline: 2px dashed #1E5FA0; outline-offset: -3px; background: rgba(30,95,160,0.08) !important; }
+  .move-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1E5FA0; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; z-index: 9999; display: none; box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+  .move-toast.show { display: block; }
+  .move-toast.err { background: #A32D2D; }
+  .move-date-btn { font-size: 10px; font-weight: 600; color: #1E5FA0; background: #DAEAF8; border: none; border-radius: 4px; padding: 3px 8px; cursor: pointer; margin-top: 5px; display: block; width: 100%; text-align: left; }
+  .move-date-btn:hover { background: #C0D8F0; }
+  .move-popup { position: fixed; background: var(--surface); border: 0.5px solid var(--border-med); border-radius: var(--radius); padding: 14px 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); z-index: 800; display: none; min-width: 230px; }
+  .move-popup.open { display: block; }
+  .move-popup-title { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+  .move-popup-do { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+  .move-popup input[type="date"] { width: 100%; border: 0.5px solid var(--border-med); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 13px; color: var(--text); background: var(--bg); margin-bottom: 10px; }
+  .move-popup-btns { display: flex; gap: 8px; }
+  .move-popup-btns button { flex: 1; padding: 7px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer; border: none; }
+  .move-popup-confirm { background: #1E5FA0; color: #fff; }
+  .move-popup-confirm:hover { background: #174d82; }
+  .move-popup-cancel { background: var(--surface2); color: var(--text-muted); }
+  .move-popup-cancel:hover { background: var(--border-med); }
+
+  /* Job detail modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    z-index: 500; display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: var(--surface); border-radius: var(--radius); width: 100%; max-width: 680px;
+    max-height: 90vh; display: flex; flex-direction: column;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.25); border: 0.5px solid var(--border-med);
+  }
+  .modal-header {
+    display: flex; align-items: center; gap: 12px; padding: 16px 20px;
+    border-bottom: 0.5px solid var(--border-med); flex-shrink: 0;
+  }
+  .modal-do { font-size: 18px; font-weight: 700; color: var(--text); }
+  .modal-close {
+    margin-left: auto; background: none; border: none; cursor: pointer;
+    font-size: 20px; color: var(--text-faint); line-height: 1; padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .modal-close:hover { background: var(--surface2); color: var(--text); }
+  .modal-body { overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+  .modal-section-title {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--text-faint); margin-bottom: 10px;
+  }
+  .modal-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
+  .modal-fields.single { grid-template-columns: 1fr; }
+  .modal-field { display: flex; flex-direction: column; gap: 2px; }
+  .modal-field-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); }
+  .modal-field-val { font-size: 13px; color: var(--text); word-break: break-word; }
+  .modal-items-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .modal-items-table th { text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); padding: 4px 8px; border-bottom: 0.5px solid var(--border-med); }
+  .modal-items-table td { padding: 6px 8px; border-bottom: 0.5px solid var(--border); color: var(--text); }
+  .modal-items-table tr:last-child td { border-bottom: none; }
+  .modal-loading { text-align: center; padding: 40px; color: var(--text-muted); }
+  .modal-photo { max-width: 100%; border-radius: var(--radius-sm); margin-top: 6px; }
+  .modal-section { border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 14px; }
+
+
+  .job-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin-bottom: 4px;
+  }
+
+  .job-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .job-meta-icon {
+    font-size: 10px;
+    opacity: 0.7;
+  }
+
+  .job-meta-val {
+    font-weight: 500;
+    color: var(--text);
+  }
+
+</style>
+</head>
+<body>
+
+<div class="tooltip" id="tooltip"></div>
+
+<div class="move-popup" id="movePopup">
+  <div class="move-popup-title">Move job to date</div>
+  <div class="move-popup-do" id="movePopupDo"></div>
+  <input type="date" id="movePopupDate">
+  <div class="move-popup-btns">
+    <button class="move-popup-confirm" onclick="confirmMoveDate()">Move</button>
+    <button class="move-popup-cancel" onclick="closeMovePopup()">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="jobModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-do" id="modalDo"></div>
+      <div id="modalStatus"></div>
+      <button class="modal-close" onclick="closeModal()">&#215;</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="modal-loading"><div class="spinner"></div>Loading...</div>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="header-left">
+    <div class="logo">
+      <svg viewBox="0 0 16 16"><path d="M3 4h10v1.5H3zm0 3h10v1.5H3zm0 3h7v1.5H3z"/></svg>
+    </div>
+    <h1>Weekly Job Board</h1>
+  </div>
+
+  <div class="week-nav">
+    <button class="nav-btn" id="prevWeek" title="Previous week">&#8592;</button>
+    <span class="week-label" id="weekLabel"></span>
+    <button class="nav-btn" id="nextWeek" title="Next week">&#8594;</button>
+    <button class="nav-btn" id="todayBtn" title="Go to current week" style="font-size:11px;font-weight:600;width:auto;padding:0 8px;">Now</button>
+  </div>
+
+  <div class="header-right">
+    <span class="last-updated" id="lastUpdated"></span>
+    <span><span class="status-dot" id="statusDot"></span><span id="statusText" style="font-size:12px;color:rgba(255,255,255,0.75)"></span></span>
+    <button class="refresh-btn" id="refreshBtn" onclick="loadData()">&#8635; Refresh</button>
+  </div>
+</header>
+
+<div class="main">
+  <div class="error-banner" id="errorBanner"></div>
+
+  <div class="summary-bar" id="summaryBar"></div>
+
+  <div class="search-bar-wrap">
+    <span class="search-icon">&#128269;</span>
+    <input type="text" id="searchInput" placeholder="Search by job number, name or phone number..." autocomplete="off" oninput="handleSearch(this.value)" />
+    <button class="search-clear" id="searchClear" onclick="clearSearch()" title="Clear search">&#215;</button>
+    <span class="search-count" id="searchCount"></span>
+  </div>
+
+  <div class="legend">
+    <span class="legend-item"><span class="badge badge-info">Info Received</span></span>
+    <span class="legend-item"><span class="badge badge-transit">Booked In</span></span>
+    <span class="legend-item"><span class="badge badge-completed">Completed</span></span>
+    <span class="legend-item"><span class="badge badge-failed">Failed</span></span>
+    <span class="legend-item"><span class="badge badge-unassigned">Unassigned</span></span>
+    <span class="legend-item" style="margin-left:auto;font-size:12px;color:var(--text-faint)">Timezone: Perth (AWST) &nbsp;|&nbsp; Auto-refreshes on page load</span>
+  </div>
+
+  <div class="grid-wrapper">
+    <div id="boardContainer">
+      <div class="loading-overlay">
+        <div class="spinner"></div>
+        <div>Loading jobs from Detrack...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PERTH_TZ = 'Australia/Perth';
+const STATUSES = ['info_recv', 'in_transit', 'dispatched', 'completed', 'failed'];
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+let weekOffset = 0;
+let allJobs = {};
+
+// Returns the current date/time as a Date object with local values matching Perth time.
+// Uses Intl.DateTimeFormat parts to avoid the en-AU DD/MM/YYYY -> new Date() parse bug
+// where the browser misreads the locale string as MM/DD/YYYY (American order).
+function nowPerth() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone: PERTH_TZ,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  }).formatToParts(now);
+  const get = type => parts.find(p => p.type === type).value;
+  // Construct unambiguously: new Date(year, month-1, day, hour, min, sec)
+  return new Date(
+    Number(get('year')),
+    Number(get('month')) - 1,
+    Number(get('day')),
+    Number(get('hour')),
+    Number(get('minute')),
+    Number(get('second'))
+  );
+}
+
+// Format a Date object as YYYY-MM-DD using Perth's local date
+function formatDate(d) {
+  // d is already a local-Perth date object (constructed via nowPerth or getWeekDates)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function getWeekDates(offset = 0) {
+  const now = nowPerth();
+  const day = now.getDay(); // 0=Sun, 1=Mon ...
+  const diffToMon = (day === 0 ? -6 : 1 - day);
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMon + offset * 7);
+  monday.setHours(0, 0, 0, 0);
+  const dates = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    dates.push(d);
+  }
+  return dates;
+}
+
+function isToday(d) {
+  const t = nowPerth();
+  return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
+}
+
+function updateWeekLabel(dates) {
+  const start = dates[0];
+  const end = dates[4];
+  const opts = { day: 'numeric', month: 'short' };
+  document.getElementById('weekLabel').textContent =
+    start.toLocaleDateString('en-AU', opts) + ' – ' + end.toLocaleDateString('en-AU', { ...opts, year: 'numeric' });
+}
+
+function setStatus(state, msg) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  dot.className = 'status-dot ' + state;
+  txt.textContent = msg;
+}
+
+function getVehicle(j) {
+  return j.assign_to || j.vehicle || j.driver_name || j.assigned_to || j.driver || '';
+}
+
+async function fetchJobsForDate(dateStr) {
+  const res = await fetch(`/api/jobs?date=${dateStr}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  const jobs = data.data || [];
+  return jobs.filter(j => STATUSES.includes(j.primary_job_status));
+}
+
+async function loadData() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  setStatus('loading', 'Fetching...');
+  document.getElementById('errorBanner').style.display = 'none';
+
+  const dates = getWeekDates(weekOffset);
+  updateWeekLabel(dates);
+
+  try {
+    const results = await Promise.all(dates.map(d => fetchJobsForDate(formatDate(d))));
+    allJobs = {};
+    dates.forEach((d, i) => { allJobs[formatDate(d)] = results[i]; });
+
+    renderBoard(dates);
+    setStatus('live', 'Live');
+    document.getElementById('lastUpdated').textContent =
+      'Updated ' + new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: PERTH_TZ });
+  } catch (e) {
+    const banner = document.getElementById('errorBanner');
+    banner.textContent = 'Could not load data: ' + e.message + '. Check your API key and network. The Detrack API may not support cross-origin requests from browsers directly — if you see a CORS error, you may need to host this file on a server with a proxy.';
+    banner.style.display = 'block';
+    setStatus('error', 'Error');
+    renderEmpty(dates);
+  }
+
+  btn.disabled = false;
+}
+
+function renderEmpty(dates) {
+  renderBoard(dates);
+}
+
+function renderBoard(dates) {
+  const container = document.getElementById('boardContainer');
+
+  const jobsByVehicleByDate = {};
+  const vehicleSet = new Set();
+  let totalJobs = 0;
+  let infoCount = 0;
+  let transitCount = 0;
+  let completedCount = 0;
+  let failedCount = 0;
+
+  dates.forEach(d => {
+    const ds = formatDate(d);
+    const jobs = allJobs[ds] || [];
+    jobs.forEach(j => {
+      totalJobs++;
+      if (j.primary_job_status === 'info_recv') infoCount++;
+      if (j.primary_job_status === 'in_transit' || j.primary_job_status === 'dispatched') transitCount++;
+      if (j.primary_job_status === 'completed') completedCount++;
+      if (j.primary_job_status === 'failed') failedCount++;
+      const v = getVehicle(j) || '__unassigned__';
+      vehicleSet.add(v);
+      if (!jobsByVehicleByDate[v]) jobsByVehicleByDate[v] = {};
+      if (!jobsByVehicleByDate[v][ds]) jobsByVehicleByDate[v][ds] = [];
+      jobsByVehicleByDate[v][ds].push(j);
+    });
+  });
+
+  const vehicles = Array.from(vehicleSet).sort((a, b) => {
+    if (a === '__unassigned__') return 1;
+    if (b === '__unassigned__') return -1;
+    return a.localeCompare(b);
+  });
+
+  if (vehicles.length === 0) vehicles.push('__unassigned__');
+
+  document.getElementById('summaryBar').innerHTML = `
+    <div class="summary-card"><span class="summary-label">Total jobs</span><span class="summary-value">${totalJobs}</span></div>
+    <div class="summary-card"><span class="summary-label">Info Received</span><span class="summary-value">${infoCount}</span></div>
+    <div class="summary-card"><span class="summary-label">Booked In</span><span class="summary-value">${transitCount}</span></div>
+    <div class="summary-card"><span class="summary-label">Completed</span><span class="summary-value">${completedCount}</span></div>
+    <div class="summary-card"><span class="summary-label">Failed</span><span class="summary-value">${failedCount}</span></div>
+    <div class="summary-card"><span class="summary-label">Vehicles</span><span class="summary-value">${vehicles.filter(v => v !== '__unassigned__').length}</span></div>
+  `;
+
+  const colFr = `${170}px repeat(5, minmax(160px, 1fr))`;
+
+  let html = `<div class="grid" style="grid-template-columns: ${colFr};">`;
+
+  html += `<div class="cell cell-head" style="background:var(--surface2);"><span style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">Vehicle</span></div>`;
+  dates.forEach((d, i) => {
+    const today = isToday(d);
+    html += `<div class="cell cell-head${today ? ' today' : ''}">
+      <span class="day-name" style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);">${DAYS[i]}</span>
+      <span class="date-num">${d.getDate()}</span>
+      <span style="font-size:10px;color:var(--text-faint);">${d.toLocaleDateString('en-AU',{month:'short'})}</span>
+    </div>`;
+  });
+
+  // Subtle vehicle row tints — hue shifts on the base surface colour
+  const VEHICLE_PALETTES = [
+    { row: '#EDF4FB', icon: '#DAEAF8', iconText: '#1A5FA0' }, // default blue (unassigned)
+    { row: '#EDF8F0', icon: '#C8EDD4', iconText: '#1A6B3C' }, // green
+    { row: '#F8F3ED', icon: '#F0DECA', iconText: '#7A3D00' }, // amber
+    { row: '#F3EDF8', icon: '#E0CAED', iconText: '#5A1A82' }, // purple
+    { row: '#EDF7F8', icon: '#C8E8ED', iconText: '#1A5F6B' }, // teal
+    { row: '#F8EDEE', icon: '#EDD0D2', iconText: '#821A1E' }, // rose
+    { row: '#F5F8ED', icon: '#DCE8C8', iconText: '#3C6B1A' }, // lime
+    { row: '#EDF0F8', icon: '#CAD0ED', iconText: '#1A246B' }, // indigo
+  ];
+
+  vehicles.forEach((v, vIdx) => {
+    const isUnassigned = v === '__unassigned__';
+    const label = isUnassigned ? 'Unassigned' : v;
+    const initial = label.charAt(0).toUpperCase();
+    const palette = isUnassigned ? VEHICLE_PALETTES[0] : VEHICLE_PALETTES[((vIdx) % (VEHICLE_PALETTES.length - 1)) + 1];
+
+    html += `<div class="vehicle-header" style="background:${palette.row};">
+      <div class="vehicle-icon${isUnassigned ? ' unassigned' : ''}" style="${isUnassigned ? '' : `background:${palette.icon};color:${palette.iconText};`}">${initial}</div>
+      <span class="vehicle-name" title="${escHtml(label)}">${escHtml(label)}</span>
+    </div>`;
+
+    dates.forEach(d => {
+      const ds = formatDate(d);
+      const jobs = (jobsByVehicleByDate[v] && jobsByVehicleByDate[v][ds]) || [];
+
+      html += `<div class="cell" data-date="${ds}" style="vertical-align:top;background:${palette.row};">`;
+      if (jobs.length === 0) {
+        html += `<span class="empty-cell">—</span>`;
+      } else {
+        jobs.forEach(j => {
+          const status = j.primary_job_status;
+          const badgeClass = status === 'info_recv' ? 'badge-info'
+            : status === 'completed' ? 'badge-completed'
+            : status === 'failed' ? 'badge-failed'
+            : 'badge-transit';
+          const badgeLabel = status === 'info_recv' ? 'Info Received'
+            : status === 'completed' ? 'Completed'
+            : status === 'failed' ? 'Failed'
+            : 'Booked In';
+          const doNum = j.do_number || j.id || '—';
+          const name = j.deliver_to_collect_from || j.name || '';
+          const address = j.address || '';
+          const phone = j.phone_number || j.phone || j.contact_number || '';
+          const timeWindow = j.time_window || (j.time_window_from && j.time_window_to ? j.time_window_from + ' – ' + j.time_window_to : '') || j.job_time || '';
+          const serviceTime = j.service_time ? j.service_time + ' min' : '';
+
+          const canDrag = status !== 'completed' && status !== 'failed';
+          html += `<div class="job-card${canDrag ? '' : ' no-drag'}"
+            data-do="${escHtml(doNum)}"
+            data-date="${ds}"
+            data-name="${escHtml(name)}"
+            data-address="${escHtml(address)}"
+            data-status="${escHtml(badgeLabel)}"
+            data-vehicle="${escHtml(label)}"
+            data-time="${escHtml(timeWindow)}"
+            data-phone="${escHtml(phone)}"
+            data-instructions="${escHtml(j.instructions || '')}"
+            ${canDrag ? 'draggable="true"' : ''}
+            onmouseenter="showTooltip(event, this)"
+            onmouseleave="hideTooltip()"
+            onclick="hideTooltip();openModal('${escHtml(doNum)}')">
+            <div class="job-do">${escHtml(doNum)}</div>
+            ${name ? `<div class="job-name">${escHtml(name)}</div>` : ''}
+            ${address ? `<div class="job-address">${escHtml(address)}</div>` : ''}
+            ${phone ? `<div class="job-address">${escHtml(phone)}</div>` : ''}
+            <div class="job-footer">
+              <span class="badge ${badgeClass}">${badgeLabel}</span>
+            </div>
+            ${isUnassigned ? `<button class="move-date-btn" onclick="event.stopPropagation();openMovePopup(this,'${escHtml(doNum)}','${ds}')">📅 Move to date</button>` : ''}
+          </div>`;
+        });
+      }
+      html += `</div>`;
+    });
+  });
+
+  html += `</div>`;
+  container.innerHTML = html;
+
+  // Wire up drag-and-drop
+  let dragDoNum = null, dragFromDate = null;
+
+  container.querySelectorAll('.job-card[draggable="true"]').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      dragDoNum = card.dataset.do;
+      dragFromDate = card.dataset.date;
+      e.dataTransfer.effectAllowed = 'move';
+      setTimeout(() => card.classList.add('dragging'), 0);
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+  });
+
+  container.querySelectorAll('.cell[data-date]').forEach(cell => {
+    cell.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; cell.classList.add('drag-over'); });
+    cell.addEventListener('dragleave', e => { if (!cell.contains(e.relatedTarget)) cell.classList.remove('drag-over'); });
+    cell.addEventListener('drop', e => {
+      e.preventDefault();
+      cell.classList.remove('drag-over');
+      const toDate = cell.dataset.date;
+      if (!dragDoNum || toDate === dragFromDate) return;
+      rescheduleJob(dragDoNum, dragFromDate, toDate);
+    });
+  });
+}
+
+function showTooltip(e, el) {
+  const tt = document.getElementById('tooltip');
+  const d = el.dataset;
+  tt.innerHTML = `
+    <div style="font-weight:600;margin-bottom:6px;">${d.do}</div>
+    ${d.name ? `<div class="tooltip-row"><span class="tooltip-label">Customer</span><span class="tooltip-val">${d.name}</span></div>` : ''}
+    ${d.phone ? `<div class="tooltip-row"><span class="tooltip-label">Phone</span><span class="tooltip-val">${d.phone}</span></div>` : ''}
+    ${d.address ? `<div class="tooltip-row"><span class="tooltip-label">Address</span><span class="tooltip-val">${d.address}</span></div>` : ''}
+    ${d.vehicle ? `<div class="tooltip-row"><span class="tooltip-label">Vehicle</span><span class="tooltip-val">${d.vehicle}</span></div>` : ''}
+    ${d.time ? `<div class="tooltip-row"><span class="tooltip-label">Time window</span><span class="tooltip-val">${d.time}</span></div>` : ''}
+    ${d.service ? `<div class="tooltip-row"><span class="tooltip-label">Service time</span><span class="tooltip-val">${d.service}</span></div>` : ''}
+    ${d.status ? `<div class="tooltip-row"><span class="tooltip-label">Status</span><span class="tooltip-val">${d.status}</span></div>` : ''}
+    ${d.instructions ? `<div class="tooltip-row"><span class="tooltip-label">Notes</span><span class="tooltip-val">${d.instructions}</span></div>` : ''}
+  `;
+  tt.style.display = 'block';
+  moveTooltip(e);
+}
+
+function moveTooltip(e) {
+  const tt = document.getElementById('tooltip');
+  const x = Math.min(e.clientX + 12, window.innerWidth - 240);
+  const y = Math.min(e.clientY + 12, window.innerHeight - 160);
+  tt.style.left = x + 'px';
+  tt.style.top = y + 'px';
+}
+
+document.addEventListener('mousemove', e => {
+  if (document.getElementById('tooltip').style.display === 'block') moveTooltip(e);
+});
+
+function hideTooltip() {
+  document.getElementById('tooltip').style.display = 'none';
+}
+
+
+function handleSearch(val) {
+  const q = val.trim().toLowerCase();
+  const clearBtn = document.getElementById('searchClear');
+  const countEl = document.getElementById('searchCount');
+  clearBtn.style.display = q ? 'block' : 'none';
+
+  const cards = document.querySelectorAll('.job-card');
+  let visible = 0;
+  cards.forEach(card => {
+    card.classList.remove('search-highlight');
+    if (!q) {
+      card.classList.remove('search-hidden');
+      visible++;
+      return;
+    }
+    const haystack = [
+      card.dataset.do,
+      card.dataset.name,
+      card.dataset.phone,
+      card.dataset.address
+    ].join(' ').toLowerCase();
+    if (haystack.includes(q)) {
+      card.classList.remove('search-hidden');
+      card.classList.add('search-highlight');
+      visible++;
+    } else {
+      card.classList.add('search-hidden');
+    }
+  });
+  countEl.textContent = q ? `${visible} result${visible !== 1 ? 's' : ''}` : '';
+}
+
+function clearSearch() {
+  const input = document.getElementById('searchInput');
+  input.value = '';
+  handleSearch('');
+  input.focus();
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('prevWeek').onclick = () => { weekOffset--; loadData(); };
+document.getElementById('nextWeek').onclick = () => { weekOffset++; loadData(); };
+document.getElementById('todayBtn').onclick = () => { weekOffset = 0; loadData(); };
+
+// ── Job detail modal ──────────────────────────────────────────────
+function openModal(doNum) {
+  const modal = document.getElementById('jobModal');
+  document.getElementById('modalDo').textContent = doNum;
+  document.getElementById('modalStatus').innerHTML = '';
+  document.getElementById('modalBody').innerHTML = '<div class="modal-loading"><div class="spinner"></div>Loading...</div>';
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  fetch(`/api/job?do=${encodeURIComponent(doNum)}`)
+    .then(r => r.json())
+    .then(data => renderModal(data.data || data))
+    .catch(err => {
+      document.getElementById('modalBody').innerHTML = `<div style="color:#A32D2D;padding:20px;">Failed to load job: ${escHtml(err.message)}</div>`;
+    });
+}
+
+function closeModal() {
+  document.getElementById('jobModal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function fld(label, val) {
+  if (!val && val !== 0) return '';
+  return `<div class="modal-field"><div class="modal-field-label">${label}</div><div class="modal-field-val">${escHtml(String(val))}</div></div>`;
+}
+
+function renderModal(j) {
+  if (!j) { document.getElementById('modalBody').innerHTML = '<div style="padding:20px;color:var(--text-muted);">No data returned.</div>'; return; }
+
+  const status = j.primary_job_status || j.status || '';
+  const badgeClass = status === 'info_recv' ? 'badge-info' : status === 'completed' ? 'badge-completed' : status === 'failed' ? 'badge-failed' : 'badge-transit';
+  const badgeLabel = status === 'info_recv' ? 'Info Received' : status === 'completed' ? 'Completed' : status === 'failed' ? 'Failed' : status ? 'Booked In' : '';
+  document.getElementById('modalStatus').innerHTML = badgeLabel ? `<span class="badge ${badgeClass}">${badgeLabel}</span>` : '';
+
+  const timeWindow = j.time_window || (j.time_window_from && j.time_window_to ? j.time_window_from + ' – ' + j.time_window_to : '') || j.job_time || '';
+
+  let html = '';
+
+  // Job info
+  html += `<div class="modal-section"><div class="modal-section-title">Job</div><div class="modal-fields">
+    ${fld('Date', j.date)}
+    ${fld('Vehicle / Driver', j.assign_to || j.driver_name || j.vehicle || j.assigned_to || j.driver)}
+    ${fld('Time Window', timeWindow)}
+    ${fld('Service Time', j.service_time ? j.service_time + ' min' : '')}
+    ${fld('Job Type', j.job_type)}
+    ${fld('Job Sequence', j.job_sequence)}
+    ${fld('Tracking Number', j.tracking_number)}
+    ${fld('Group Name', j.group_name)}
+    ${fld('Zone', j.zone)}
+  </div></div>`;
+
+  // Customer
+  html += `<div class="modal-section"><div class="modal-section-title">Customer</div><div class="modal-fields">
+    ${fld('Name', j.deliver_to_collect_from || j.name)}
+    ${fld('Phone', j.phone_number || j.phone || j.contact_number)}
+    ${fld('Address', j.address)}
+    ${fld('Postal Code', j.postal_code)}
+    ${fld('City', j.city)}
+    ${fld('State', j.state)}
+    ${fld('Country', j.country)}
+    ${fld('Email', j.email || j.notify_email)}
+  </div></div>`;
+
+  // Notes & instructions
+  const hasNotes = j.instructions || j.note || j.notes || j.remarks || j.delivery_note;
+  if (hasNotes) {
+    html += `<div class="modal-section"><div class="modal-section-title">Notes & Instructions</div><div class="modal-fields single">
+      ${fld('Instructions', j.instructions)}
+      ${fld('Note', j.note || j.notes)}
+      ${fld('Remarks', j.remarks)}
+      ${fld('Delivery Note', j.delivery_note)}
+    </div></div>`;
+  }
+
+  // Items
+  const items = j.items || [];
+  if (items.length > 0) {
+    html += `<div class="modal-section"><div class="modal-section-title">Items (${items.length})</div>
+      <table class="modal-items-table">
+        <thead><tr><th>Description</th><th>SKU</th><th>Qty</th><th>Weight</th><th>Remarks</th></tr></thead>
+        <tbody>${items.map(it => `<tr>
+          <td>${escHtml(it.description || it.name || '—')}</td>
+          <td>${escHtml(it.sku || it.item_id || '—')}</td>
+          <td>${escHtml(String(it.quantity ?? it.qty ?? '—'))}</td>
+          <td>${escHtml(it.weight ? it.weight + (it.weight_unit || '') : '—')}</td>
+          <td>${escHtml(it.remarks || it.note || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }
+
+  // Proof of delivery
+  const hasPod = j.pod_time || j.pod_lat || j.reason || j.pod_address;
+  if (hasPod) {
+    html += `<div class="modal-section"><div class="modal-section-title">Proof of Delivery</div><div class="modal-fields">
+      ${fld('Completed At', j.pod_time)}
+      ${fld('Location', j.pod_address || (j.pod_lat && j.pod_lng ? `${j.pod_lat}, ${j.pod_lng}` : ''))}
+      ${fld('Failure Reason', j.reason)}
+      ${fld('Received By', j.received_by || j.pod_received_by)}
+    </div></div>`;
+  }
+
+  // Photos & signature
+  const photos = [].concat(j.photo_1, j.photo_2, j.photo_3, j.photo_4, j.photo_5).filter(Boolean);
+  if (photos.length || j.signature) {
+    html += `<div class="modal-section"><div class="modal-section-title">Photos & Signature</div>`;
+    if (j.signature) html += `<div style="margin-bottom:10px;"><div class="modal-field-label" style="margin-bottom:4px;">Signature</div><img class="modal-photo" src="${escHtml(j.signature)}" style="max-height:120px;"></div>`;
+    if (photos.length) html += `<div style="display:flex;flex-wrap:wrap;gap:8px;">${photos.map(p => `<img class="modal-photo" src="${escHtml(p)}" style="max-height:140px;max-width:200px;">`).join('')}</div>`;
+    html += `</div>`;
+  }
+
+  document.getElementById('modalBody').innerHTML = html;
+}
+
+// ── Move to date popup (for unassigned jobs) ─────────────────────
+let _moveDoNum = null, _moveFromDate = null;
+
+function openMovePopup(btn, doNum, fromDate) {
+  _moveDoNum = doNum;
+  _moveFromDate = fromDate;
+  const popup = document.getElementById('movePopup');
+  document.getElementById('movePopupDo').textContent = doNum;
+  // Default to next weekday from fromDate
+  const input = document.getElementById('movePopupDate');
+  input.value = fromDate;
+  input.min = new Date().toISOString().split('T')[0];
+  // Position near the button
+  const rect = btn.getBoundingClientRect();
+  const popupW = 230;
+  let left = rect.left;
+  if (left + popupW > window.innerWidth - 8) left = window.innerWidth - popupW - 8;
+  popup.style.left = left + 'px';
+  popup.style.top = (rect.bottom + 6) + 'px';
+  popup.classList.add('open');
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeMovePopup() {
+  document.getElementById('movePopup').classList.remove('open');
+  _moveDoNum = null; _moveFromDate = null;
+}
+
+function confirmMoveDate() {
+  const newDate = document.getElementById('movePopupDate').value;
+  if (!newDate) return;
+  if (newDate === _moveFromDate) { closeMovePopup(); return; }
+  closeMovePopup();
+  rescheduleJob(_moveDoNum, _moveFromDate, newDate);
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMovePopup(); });
+document.addEventListener('mousedown', e => {
+  const popup = document.getElementById('movePopup');
+  if (popup.classList.contains('open') && !popup.contains(e.target)) closeMovePopup();
+});
+
+// ── Drag-and-drop rescheduling ────────────────────────────────────
+function showMoveToast(msg, isErr) {
+  let t = document.getElementById('moveToast');
+  if (!t) { t = document.createElement('div'); t.id = 'moveToast'; t.className = 'move-toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.className = 'move-toast show' + (isErr ? ' err' : '');
+  clearTimeout(t._hide);
+  t._hide = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+async function rescheduleJob(doNum, fromDate, toDate) {
+  // Optimistic update — move in local data and re-render immediately
+  const job = (allJobs[fromDate] || []).find(j => (j.do_number || j.id) === doNum);
+  if (!job) return;
+  allJobs[fromDate] = (allJobs[fromDate] || []).filter(j => (j.do_number || j.id) !== doNum);
+  if (!allJobs[toDate]) allJobs[toDate] = [];
+  allJobs[toDate].push({ ...job, date: toDate });
+  renderBoard(getWeekDates(weekOffset));
+  showMoveToast(`Moving ${doNum} to ${toDate}…`);
+
+  try {
+    const res = await fetch(`/api/job?do=${encodeURIComponent(doNum)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { date: toDate } })
+    });
+    const text = await res.text();
+    console.log('[reschedule] response', res.status, text.substring(0, 200));
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    showMoveToast(`✓ ${doNum} moved to ${toDate}`);
+  } catch (e) {
+    // Revert on failure
+    allJobs[toDate] = (allJobs[toDate] || []).filter(j => (j.do_number || j.id) !== doNum);
+    if (!allJobs[fromDate]) allJobs[fromDate] = [];
+    allJobs[fromDate].push(job);
+    renderBoard(getWeekDates(weekOffset));
+    showMoveToast(`Failed to move ${doNum}: ${e.message}`, true);
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>
