@@ -869,6 +869,7 @@ function renderBoard(dates) {
             : status === 'completed' ? 'Completed'
             : status === 'failed' ? 'Failed'
             : 'Booked In';
+          // Use do_number if available; fall back to id or '—'
           const doNum = j.do_number || j.id || '—';
           const name = j.deliver_to_collect_from || j.name || '';
           const address = j.address || '';
@@ -877,9 +878,13 @@ function renderBoard(dates) {
           const serviceTime = j.service_time ? j.service_time + ' min' : '';
 
           const canDrag = status !== 'completed' && status !== 'failed';
+          // Store full job data so we can display it without fetching
+          const jobDataStr = btoa(JSON.stringify(j));
           html += `<div class="job-card${canDrag ? '' : ' no-drag'}"
             data-do="${escHtml(doNum)}"
+            data-id="${j.id || ''}"
             data-date="${ds}"
+            data-job="${jobDataStr}"
             data-name="${escHtml(name)}"
             data-address="${escHtml(address)}"
             data-status="${escHtml(badgeLabel)}"
@@ -1019,17 +1024,43 @@ document.getElementById('todayBtn').onclick = () => { weekOffset = 0; loadData()
 
 // ── Job detail modal ──────────────────────────────────────────────
 function openModal(doNum) {
+  if (!doNum || doNum === '—') { return; } // Don't open jobs without a valid DO number
+
   const modal = document.getElementById('jobModal');
   document.getElementById('modalDo').textContent = doNum;
   document.getElementById('modalStatus').innerHTML = '';
-  document.getElementById('modalBody').innerHTML = '<div class="modal-loading"><div class="spinner"></div>Loading...</div>';
   modal.classList.add('open');
   document.body.style.overflow = 'hidden';
 
+  // Try to get cached job data first (from data-job attribute)
+  const card = document.querySelector(`[data-do="${doNum}"]`);
+  if (card && card.dataset.job) {
+    try {
+      const job = JSON.parse(atob(card.dataset.job));
+      console.log('[openModal] using cached job data');
+      renderModal(job);
+      return;
+    } catch (e) {
+      console.warn('[openModal] failed to parse cached data:', e.message);
+    }
+  }
+
+  // Fall back to fetching if no cached data
+  document.getElementById('modalBody').innerHTML = '<div class="modal-loading"><div class="spinner"></div>Loading...</div>';
+
+  console.log('[openModal] fetching job from API:', doNum);
   fetch(`/api/job?do=${encodeURIComponent(doNum)}`)
-    .then(r => r.json())
-    .then(data => renderModal(data.data || data))
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.text();
+    })
+    .then(text => {
+      if (!text) throw new Error('Empty response');
+      const data = JSON.parse(text);
+      renderModal(data.data || data);
+    })
     .catch(err => {
+      console.error('[openModal] error:', err.message);
       document.getElementById('modalBody').innerHTML = `<div style="color:#A32D2D;padding:20px;">Failed to load job: ${escHtml(err.message)}</div>`;
     });
 }
