@@ -898,7 +898,7 @@ function renderBoard(dates) {
             <div class="job-footer">
               <span class="badge ${badgeClass}">${badgeLabel}</span>
             </div>
-            ${isUnassigned ? `<button class="move-date-btn" onclick="event.stopPropagation();openMovePopup(this,'${escHtml(doNum)}','${ds}')">📅 Move to date</button>` : ''}
+            ${isUnassigned ? `<button class="move-date-btn" onclick="event.stopPropagation();openMovePopup(event.currentTarget)">📅 Move to date</button>` : ''}
           </div>`;
         });
       }
@@ -1137,22 +1137,39 @@ function renderModal(j) {
 // ── Move to date popup (for unassigned jobs) ─────────────────────
 let _moveDoNum = null, _moveFromDate = null;
 
-function openMovePopup(btn, doNum, fromDate) {
+function openMovePopup(btn) {
+  // Read doNum and date from the job card element
+  const card = btn.closest('.job-card');
+  if (!card) return;
+  const doNum = card.dataset.do;
+  const fromDate = card.dataset.date;
+  if (!doNum || !fromDate) return;
+
   _moveDoNum = doNum;
   _moveFromDate = fromDate;
   const popup = document.getElementById('movePopup');
   document.getElementById('movePopupDo').textContent = doNum;
-  // Default to next weekday from fromDate
+
   const input = document.getElementById('movePopupDate');
   input.value = fromDate;
   input.min = new Date().toISOString().split('T')[0];
-  // Position near the button
+
+  // Position near the button, above or below depending on space
   const rect = btn.getBoundingClientRect();
   const popupW = 230;
+  const popupH = 180;
   let left = rect.left;
   if (left + popupW > window.innerWidth - 8) left = window.innerWidth - popupW - 8;
+
+  // Check if there's enough space below; if not, position above
+  let top;
+  if (rect.bottom + popupH + 6 < window.innerHeight - 20) {
+    top = rect.bottom + 6;
+  } else {
+    top = rect.top - popupH - 6;
+  }
   popup.style.left = left + 'px';
-  popup.style.top = (rect.bottom + 6) + 'px';
+  popup.style.top = top + 'px';
   popup.classList.add('open');
   setTimeout(() => input.focus(), 50);
 }
@@ -1166,8 +1183,9 @@ function confirmMoveDate() {
   const newDate = document.getElementById('movePopupDate').value;
   if (!newDate) return;
   if (newDate === _moveFromDate) { closeMovePopup(); return; }
-  closeMovePopup();
+  // Call rescheduleJob BEFORE closeMovePopup so variables aren't cleared
   rescheduleJob(_moveDoNum, _moveFromDate, newDate);
+  closeMovePopup();
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMovePopup(); });
@@ -1187,33 +1205,50 @@ function showMoveToast(msg, isErr) {
 }
 
 async function rescheduleJob(doNum, fromDate, toDate) {
+  const doStr = String(doNum);
+  const match = j => String(j.do_number || j.id) === doStr;
+
   // Optimistic update — move in local data and re-render immediately
-  const job = (allJobs[fromDate] || []).find(j => (j.do_number || j.id) === doNum);
-  if (!job) return;
-  allJobs[fromDate] = (allJobs[fromDate] || []).filter(j => (j.do_number || j.id) !== doNum);
+  const job = (allJobs[fromDate] || []).find(match);
+  if (!job) {
+    console.warn('[reschedule] job not found in allJobs[' + fromDate + ']', doStr, Object.keys(allJobs));
+    showMoveToast(`Could not find job ${doStr} in local data`, true);
+    return;
+  }
+  allJobs[fromDate] = (allJobs[fromDate] || []).filter(j => !match(j));
   if (!allJobs[toDate]) allJobs[toDate] = [];
   allJobs[toDate].push({ ...job, date: toDate });
   renderBoard(getWeekDates(weekOffset));
-  showMoveToast(`Moving ${doNum} to ${toDate}…`);
+  showMoveToast(`Moving ${doStr} to ${toDate}…`);
 
   try {
-    const res = await fetch(`/api/job?do=${encodeURIComponent(doNum)}`, {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+    const res = await fetch(`/api/job?do=${encodeURIComponent(doStr)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: { date: toDate } })
+      body: JSON.stringify({ data: { date: toDate } }),
+      signal: controller.signal
     });
+    clearTimeout(timeout);
+
     const text = await res.text();
-    console.log('[reschedule] response', res.status, text.substring(0, 200));
-    const data = text ? JSON.parse(text) : {};
-    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
-    showMoveToast(`✓ ${doNum} moved to ${toDate}`);
+    console.log('[reschedule] response', res.status, text ? text.substring(0, 300) : '(empty)');
+
+    if (!res.ok) {
+      const data = text ? JSON.parse(text) : {};
+      throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    }
+    showMoveToast(`✓ ${doStr} moved to ${toDate}`);
   } catch (e) {
+    console.error('[reschedule] error:', e.message);
     // Revert on failure
-    allJobs[toDate] = (allJobs[toDate] || []).filter(j => (j.do_number || j.id) !== doNum);
+    allJobs[toDate] = (allJobs[toDate] || []).filter(j => !match(j));
     if (!allJobs[fromDate]) allJobs[fromDate] = [];
     allJobs[fromDate].push(job);
     renderBoard(getWeekDates(weekOffset));
-    showMoveToast(`Failed to move ${doNum}: ${e.message}`, true);
+    showMoveToast(`Failed to move ${doStr}: ${e.message}`, true);
   }
 }
 
