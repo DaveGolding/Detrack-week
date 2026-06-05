@@ -330,16 +330,25 @@
   }
 
   .job-type {
-    font-size: 8px;
+    font-size: 10px;
     font-weight: 700;
     color: #fff;
     background: var(--accent);
-    padding: 2px 5px;
-    border-radius: 3px;
+    padding: 4px 8px;
+    border-radius: 4px;
     white-space: nowrap;
     text-transform: uppercase;
     flex-shrink: 0;
   }
+
+  .job-type.deliveryonly { background: #2ECC71; }
+  .job-type.pickup { background: #3498DB; }
+  .job-type.branchtransfer { background: #9B59B6; }
+  .job-type.installation { background: #E67E22; }
+  .job-type.service { background: #E74C3C; }
+  .job-type.inspection { background: #F39C12; }
+  .job-type.return { background: #C0392B; }
+  .job-type.collection { background: #16A085; }
 
   .job-name {
     font-size: 11px;
@@ -919,7 +928,7 @@ function renderBoard(dates) {
             onclick="hideTooltip();openModal('${escHtml(doNum)}')">
             <div class="job-header">
               <div class="job-do">${escHtml(doNum)}</div>
-              ${jobType ? `<div class="job-type">${escHtml(jobType)}</div>` : ''}
+              ${jobType ? `<div class="job-type ${jobType.toLowerCase().replace(/[^a-z0-9]/g, '')}">${escHtml(jobType)}</div>` : ''}
             </div>
             ${name ? `<div class="job-name">${escHtml(name)}</div>` : ''}
             ${address ? `<div class="job-address">${escHtml(address)}</div>` : ''}
