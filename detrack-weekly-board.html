@@ -311,14 +311,34 @@
   .job-card:hover { border-color: var(--border-med); }
   .job-card:last-child { margin-bottom: 0; }
 
+  .job-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 2px;
+  }
+
   .job-do {
     font-size: 12px;
     font-weight: 600;
     color: var(--text);
-    margin-bottom: 2px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex: 1;
+  }
+
+  .job-type {
+    font-size: 8px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent);
+    padding: 2px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+    text-transform: uppercase;
+    flex-shrink: 0;
   }
 
   .job-name {
@@ -876,6 +896,7 @@ function renderBoard(dates) {
           const phone = j.phone_number || j.phone || j.contact_number || '';
           const timeWindow = j.time_window || (j.time_window_from && j.time_window_to ? j.time_window_from + ' – ' + j.time_window_to : '') || j.job_time || '';
           const serviceTime = j.service_time ? j.service_time + ' min' : '';
+          const jobType = j.job_type || '';
 
           const canDrag = status !== 'completed' && status !== 'failed';
           // Store full job data so we can display it without fetching
@@ -896,7 +917,10 @@ function renderBoard(dates) {
             onmouseenter="showTooltip(event, this)"
             onmouseleave="hideTooltip()"
             onclick="hideTooltip();openModal('${escHtml(doNum)}')">
-            <div class="job-do">${escHtml(doNum)}</div>
+            <div class="job-header">
+              <div class="job-do">${escHtml(doNum)}</div>
+              ${jobType ? `<div class="job-type">${escHtml(jobType)}</div>` : ''}
+            </div>
             ${name ? `<div class="job-name">${escHtml(name)}</div>` : ''}
             ${address ? `<div class="job-address">${escHtml(address)}</div>` : ''}
             ${phone ? `<div class="job-address">${escHtml(phone)}</div>` : ''}
