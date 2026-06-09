@@ -5,7 +5,6 @@ const path = require('path');
 const url = require('url');
 const os = require('os');
 const { Bonjour } = require('bonjour-service');
-const mdns = require('multicast-dns')({ interface: '192.168.21.131' });
 
 const API_KEY = '071570deaf4479d2a1684336660e75876767a4b03cdfac1f';
 const PORT = 80;
@@ -14,6 +13,15 @@ const MDNS_HOST = 'detrack-schedule.local';
 // Get LAN IP
 let lanIP = '127.0.0.1';
 Object.values(os.networkInterfaces()).flat().filter(i => i.family === 'IPv4' && !i.internal).forEach(i => lanIP = i.address);
+
+// Initialize mDNS with error handling
+let mdns;
+try {
+  mdns = require('multicast-dns')({ interface: lanIP });
+} catch (err) {
+  console.error('mDNS initialization failed:', err.message);
+  mdns = require('multicast-dns')();
+}
 
 // Respond directly to mDNS A record queries for detrack-schedule.local
 mdns.on('query', query => {
@@ -106,11 +114,26 @@ const server = http.createServer((req, res) => {
   });
 });
 
+server.on('error', err => {
+  console.error('Server error:', err.message);
+  if (err.code === 'EACCES') console.error('Port 80 requires administrator privileges');
+  process.exit(1);
+});
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`DeTrack Weekly Board: http://localhost:${PORT}`);
   Object.values(os.networkInterfaces()).flat().filter(i => i.family === 'IPv4' && !i.internal)
     .forEach(i => console.log(`Network:            http://${i.address}:${PORT}`));
-  const bonjour = new Bonjour();
-  bonjour.publish({ name: 'DeTrack Schedule', type: 'http', port: PORT, host: MDNS_HOST });
-  console.log(`Bonjour: advertising as ${MDNS_HOST} → ${lanIP}`);
+  try {
+    const bonjour = new Bonjour();
+    bonjour.publish({ name: 'DeTrack Schedule', type: 'http', port: PORT, host: MDNS_HOST });
+    console.log(`Bonjour: advertising as ${MDNS_HOST} → ${lanIP}`);
+  } catch (err) {
+    console.error('Bonjour error:', err.message);
+  }
+});
+
+process.on('uncaughtException', err => {
+  console.error('Uncaught exception:', err.message);
+  process.exit(1);
 });
