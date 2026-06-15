@@ -5,8 +5,10 @@ const path = require('path');
 const url = require('url');
 const os = require('os');
 const { Bonjour } = require('bonjour-service');
+require('dotenv').config();
 
-const API_KEY = '071570deaf4479d2a1684336660e75876767a4b03cdfac1f';
+const API_KEY = process.env.DETRACK_API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const PORT = 80;
 const MDNS_HOST = 'detrack-schedule.local';
 
@@ -126,10 +128,11 @@ const server = http.createServer((req, res) => {
   }
 
   const filePath = path.join(__dirname, 'detrack-weekly-board.html');
-  fs.readFile(filePath, (err, data) => {
+  fs.readFile(filePath, 'utf8', (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
+    const html = data.replace('API_KEY_PLACEHOLDER', GOOGLE_API_KEY);
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(data);
+    res.end(html);
   });
 });
 

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Detrack — Weekly Job Board</title>
 <link rel="icon" type="image/png" href="/favicon.png">
+<script src="https://maps.googleapis.com/maps/api/js?key=API_KEY_PLACEHOLDER"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -596,6 +597,94 @@
     color: var(--text);
   }
 
+  .view-container {
+    display: none;
+  }
+
+  .view-container.active {
+    display: block;
+  }
+
+  #dayMapContainer {
+    width: 100%;
+    height: calc(100vh - 56px);
+    position: relative;
+  }
+
+  .day-view-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 24px;
+    border-bottom: 0.5px solid var(--border-med);
+    background: var(--surface);
+  }
+
+  .day-view-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .day-nav-btn {
+    padding: 8px 12px;
+    background: var(--surface2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    transition: background 0.15s;
+  }
+
+  .day-nav-btn:hover {
+    background: var(--border-med);
+  }
+
+  #dayMapBtn {
+    margin-left: auto;
+    padding: 10px 16px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.15s;
+  }
+
+  #dayMapBtn:hover {
+    background: #D06A14;
+  }
+
+  #dayMapBtn.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .view-toggle-btn {
+    background: rgba(255,255,255,0.15);
+    border: 0.5px solid rgba(255,255,255,0.30);
+    border-radius: var(--radius-sm);
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .view-toggle-btn:hover {
+    background: rgba(255,255,255,0.25);
+  }
+
+  .view-toggle-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
 </style>
 </head>
 <body>
@@ -643,36 +732,67 @@
   <div class="header-right">
     <span class="last-updated" id="lastUpdated"></span>
     <span><span class="status-dot" id="statusDot"></span><span id="statusText" style="font-size:12px;color:rgba(255,255,255,0.75)"></span></span>
+    <button class="view-toggle-btn active" id="weekViewBtn" onclick="switchView('week')" title="Week View">📅 Week</button>
+    <button class="view-toggle-btn" id="dayViewBtn" onclick="switchView('day')" title="Day View">📆 Day</button>
     <button class="refresh-btn" id="refreshBtn" onclick="loadData()">&#8635; Refresh</button>
   </div>
 </header>
 
 <div class="main">
-  <div class="error-banner" id="errorBanner"></div>
+  <!-- Week View -->
+  <div id="weekViewContainer" class="view-container active">
+    <div class="error-banner" id="errorBanner"></div>
 
-  <div class="summary-bar" id="summaryBar"></div>
+    <div class="summary-bar" id="summaryBar"></div>
 
-  <div class="search-bar-wrap">
-    <span class="search-icon">&#128269;</span>
-    <input type="text" id="searchInput" placeholder="Search by job number, name or phone number..." autocomplete="off" oninput="handleSearch(this.value)" />
-    <button class="search-clear" id="searchClear" onclick="clearSearch()" title="Clear search">&#215;</button>
-    <span class="search-count" id="searchCount"></span>
+    <div class="search-bar-wrap">
+      <span class="search-icon">&#128269;</span>
+      <input type="text" id="searchInput" placeholder="Search by job number, name or phone number..." autocomplete="off" oninput="handleSearch(this.value)" />
+      <button class="search-clear" id="searchClear" onclick="clearSearch()" title="Clear search">&#215;</button>
+      <span class="search-count" id="searchCount"></span>
+    </div>
+
+    <div class="legend">
+      <span class="legend-item"><span class="badge badge-info">Info Received</span></span>
+      <span class="legend-item"><span class="badge badge-transit">Booked In</span></span>
+      <span class="legend-item"><span class="badge badge-completed">Completed</span></span>
+      <span class="legend-item"><span class="badge badge-failed">Failed</span></span>
+      <span class="legend-item"><span class="badge badge-unassigned">Unassigned</span></span>
+      <span class="legend-item" style="margin-left:auto;font-size:12px;color:var(--text-faint)">Timezone: Perth (AWST) &nbsp;|&nbsp; Auto-refreshes on page load</span>
+    </div>
+
+    <div class="grid-wrapper">
+      <div id="boardContainer">
+        <div class="loading-overlay">
+          <div class="spinner"></div>
+          <div>Loading jobs from Detrack...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <div class="legend">
-    <span class="legend-item"><span class="badge badge-info">Info Received</span></span>
-    <span class="legend-item"><span class="badge badge-transit">Booked In</span></span>
-    <span class="legend-item"><span class="badge badge-completed">Completed</span></span>
-    <span class="legend-item"><span class="badge badge-failed">Failed</span></span>
-    <span class="legend-item"><span class="badge badge-unassigned">Unassigned</span></span>
-    <span class="legend-item" style="margin-left:auto;font-size:12px;color:var(--text-faint)">Timezone: Perth (AWST) &nbsp;|&nbsp; Auto-refreshes on page load</span>
-  </div>
-
-  <div class="grid-wrapper">
-    <div id="boardContainer">
+  <!-- Day View -->
+  <div id="dayViewContainer" class="view-container">
+    <div class="day-view-header">
+      <button class="day-nav-btn" id="dayPrevBtn" onclick="prevDay()">← Previous</button>
+      <h2 id="dayTitle"></h2>
+      <button class="day-nav-btn" id="dayNextBtn" onclick="nextDay()">Next →</button>
+      <button id="dayMapBtn" onclick="toggleDayMap()">🗺️ View Map</button>
+    </div>
+    <div id="dayMapContainer" style="display:none;position:relative;"></div>
+    <div id="vehicleFilterPanel" style="position:fixed;top:76px;left:20px;background:white;padding:12px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);z-index:1000;max-width:200px;max-height:calc(100vh - 150px);overflow-y:auto;border:0.5px solid #ccc;display:none;">
+      <div style="font-weight:600;margin-bottom:8px;font-size:12px;color:#333;">Filter Vehicles</div>
+      <div id="vehicleFilterList"></div>
+    </div>
+    <div id="zoomControl" style="position:fixed;top:76px;right:20px;background:white;padding:12px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);z-index:1000;display:none;flex-direction:column;align-items:center;gap:8px;">
+      <div style="font-size:11px;font-weight:600;color:#333;">Zoom</div>
+      <input type="range" id="zoomSlider" min="8" max="18" value="11" style="width:120px;cursor:pointer;writing-mode:bt-lr;-webkit-appearance:slider-vertical;appearance:slider-vertical;height:100px;" onchange="setMapZoom(this.value)" oninput="setMapZoom(this.value)">
+      <div id="zoomLevel" style="font-size:11px;color:#666;">11</div>
+    </div>
+    <div id="dayContentContainer" style="padding: 20px; overflow-y: auto; height: calc(100vh - 130px);">
       <div class="loading-overlay">
         <div class="spinner"></div>
-        <div>Loading jobs from Detrack...</div>
+        <div>Loading day view...</div>
       </div>
     </div>
   </div>
@@ -840,7 +960,7 @@ async function fetchVehicles() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const vehicles = data.data || data.vehicles || [];
-    return vehicles.map(v => v.vehicle_code || v.name || v.vehicle || '').filter(Boolean);
+    return vehicles;
   } catch (e) {
     console.warn('Could not fetch vehicles:', e.message);
     return [];
@@ -916,7 +1036,10 @@ function renderBoard(dates) {
   });
 
   // Add all vehicles from the API, even if they don't have jobs
-  allVehicles.forEach(v => vehicleSet.add(v));
+  allVehicles.forEach(v => {
+    const name = v.name || v.vehicle_code || v.vehicle || '';
+    if (name) vehicleSet.add(name);
+  });
 
   const vehicles = Array.from(vehicleSet).sort((a, b) => {
     if (a === '__unassigned__') return 1;
@@ -1359,6 +1482,339 @@ async function rescheduleJob(doNum, fromDate, toDate) {
     renderBoard(getWeekDates(weekOffset));
     showMoveToast(`Failed to move ${doStr}: ${e.message}`, true);
   }
+}
+
+// ── View toggle ──────────────────────────────────────────────
+let currentView = 'week';
+let currentDayView = null;
+let dayMapView = null;
+let vehicleMarkers = {};
+let jobMarkers = {};
+let vehicleColorMap = {}; // Persistent color assignment for each vehicle
+let selectedVehicles = new Set(); // Track which vehicles are selected in filter
+
+const VEHICLE_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2', '#FF6B9D', '#C78BF7', '#3DD9D6', '#FFB84D'];
+
+function getVehicleColor(vehicle) {
+  if (!vehicleColorMap[vehicle]) {
+    const colorCount = Object.keys(vehicleColorMap).length;
+    vehicleColorMap[vehicle] = VEHICLE_COLORS[colorCount % VEHICLE_COLORS.length];
+  }
+  return vehicleColorMap[vehicle];
+}
+
+function toggleVehicleFilter(vehicle, checked) {
+  if (checked) {
+    selectedVehicles.add(vehicle);
+  } else {
+    selectedVehicles.delete(vehicle);
+  }
+  // Redraw map with updated filters
+  if (dayMapView) {
+    initDayMap();
+  }
+}
+
+function setMapZoom(zoomLevel) {
+  if (dayMapView) {
+    dayMapView.setZoom(parseInt(zoomLevel));
+    document.getElementById('zoomLevel').textContent = zoomLevel;
+  }
+}
+
+function syncZoomSlider() {
+  if (dayMapView) {
+    const zoom = dayMapView.getZoom();
+    document.getElementById('zoomSlider').value = zoom;
+    document.getElementById('zoomLevel').textContent = zoom;
+  }
+}
+
+function switchView(view) {
+  currentView = view;
+  document.getElementById('weekViewContainer').classList.toggle('active', view === 'week');
+  document.getElementById('dayViewContainer').classList.toggle('active', view === 'day');
+  document.getElementById('weekViewBtn').classList.toggle('active', view === 'week');
+  document.getElementById('dayViewBtn').classList.toggle('active', view === 'day');
+
+  if (view === 'day' && !currentDayView) {
+    const dates = getWeekDates(weekOffset);
+    currentDayView = formatDate(dates[0]);
+    renderDayView();
+  }
+}
+
+function renderDayView() {
+  if (!currentDayView) return;
+
+  const dayDate = new Date();
+  const [y, m, d] = currentDayView.split('-').map(Number);
+  dayDate.setFullYear(y, m - 1, d);
+
+  document.getElementById('dayTitle').textContent = dayDate.toLocaleDateString('en-AU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+  const jobs = allJobs[currentDayView] || [];
+  const groupedByVehicle = {};
+  jobs.forEach(j => {
+    const v = getVehicle(j) || '__unassigned__';
+    if (!groupedByVehicle[v]) groupedByVehicle[v] = [];
+    groupedByVehicle[v].push(j);
+  });
+
+  let html = '';
+  Object.entries(groupedByVehicle).forEach(([vehicle, vehicleJobs]) => {
+    vehicleJobs.sort((a, b) => (parseInt(a.job_sequence) || 999) - (parseInt(b.job_sequence) || 999));
+
+    const isUnassigned = vehicle === '__unassigned__';
+    const label = isUnassigned ? 'Unassigned' : vehicle;
+
+    html += `<div style="margin-bottom:24px;">
+      <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px;padding:0 16px;">🚗 ${escHtml(label)}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">`;
+
+    vehicleJobs.forEach((j, idx) => {
+      const status = j.primary_job_status;
+      const badgeClass = status === 'info_recv' ? 'badge-info' : status === 'completed' ? 'badge-completed' : status === 'failed' ? 'badge-failed' : 'badge-transit';
+      const badgeLabel = status === 'info_recv' ? 'Info Received' : status === 'completed' ? 'Completed' : status === 'failed' ? 'Failed' : 'Booked In';
+      const doNum = j.do_number || j.id || '—';
+      const name = j.deliver_to_collect_from || j.name || '';
+      const address = j.address || '';
+      const phone = j.phone_number || j.phone || j.contact_number || '';
+      const sequence = idx + 1;
+
+      const jobDataStr = btoa(JSON.stringify(j));
+
+      html += `<div style="padding:12px;background:var(--surface2);border-radius:var(--radius-sm);cursor:pointer;"
+        onclick="openModal('${escHtml(doNum)}')">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+          <span style="font-weight:600;background:var(--accent);color:#fff;width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;">${sequence}</span>
+          <span style="font-weight:600;color:var(--text);">${escHtml(doNum)}</span>
+          <span class="badge ${badgeClass}">${badgeLabel}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text);margin-bottom:4px;">${escHtml(name)}</div>
+        <div style="font-size:12px;color:var(--text-muted);">${escHtml(address)}</div>
+        ${phone ? `<div style="font-size:12px;color:var(--text-muted);">${escHtml(phone)}</div>` : ''}
+      </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  document.getElementById('dayContentContainer').innerHTML = html;
+}
+
+function prevDay() {
+  if (!currentDayView) return;
+  const [y, m, d] = currentDayView.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() - 1);
+  currentDayView = formatDate(date);
+  renderDayView();
+  document.getElementById('dayMapContainer').style.display = 'none';
+  document.getElementById('dayContentContainer').style.display = 'block';
+  document.getElementById('vehicleFilterPanel').style.display = 'none';
+  document.getElementById('dayMapBtn').classList.remove('active');
+}
+
+function nextDay() {
+  if (!currentDayView) return;
+  const [y, m, d] = currentDayView.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + 1);
+  currentDayView = formatDate(date);
+  renderDayView();
+  document.getElementById('dayMapContainer').style.display = 'none';
+  document.getElementById('dayContentContainer').style.display = 'block';
+  document.getElementById('vehicleFilterPanel').style.display = 'none';
+  document.getElementById('dayMapBtn').classList.remove('active');
+}
+
+function toggleDayMap() {
+  const mapContainer = document.getElementById('dayMapContainer');
+  const contentContainer = document.getElementById('dayContentContainer');
+  const filterPanel = document.getElementById('vehicleFilterPanel');
+  const zoomControl = document.getElementById('zoomControl');
+  const btn = document.getElementById('dayMapBtn');
+
+  if (mapContainer.style.display === 'none') {
+    mapContainer.style.display = 'block';
+    contentContainer.style.display = 'none';
+    filterPanel.style.display = 'block';
+    zoomControl.style.display = 'flex';
+    btn.classList.add('active');
+    initDayMap();
+  } else {
+    mapContainer.style.display = 'none';
+    contentContainer.style.display = 'block';
+    filterPanel.style.display = 'none';
+    zoomControl.style.display = 'none';
+    btn.classList.remove('active');
+  }
+}
+
+function initDayMap() {
+  if (!currentDayView) return;
+
+  const mapContainer = document.getElementById('dayMapContainer');
+  if (!dayMapView) {
+    dayMapView = new google.maps.Map(mapContainer, {
+      zoom: 11,
+      center: { lat: -31.95, lng: 115.86 },
+      mapTypeControl: true,
+      scrollwheel: false,
+    });
+    // Sync zoom slider when user zooms the map
+    dayMapView.addListener('zoom_changed', syncZoomSlider);
+  }
+
+  google.maps.event.trigger(dayMapView, 'resize');
+
+  // Clear existing markers
+  Object.values(vehicleMarkers).forEach(m => m.setMap(null));
+  Object.values(jobMarkers).forEach(m => m.setMap(null));
+  vehicleMarkers = {};
+  jobMarkers = {};
+
+  const jobs = allJobs[currentDayView] || [];
+  const vehiclesData = allVehicles || [];
+
+  // Check if current day is today
+  const [y, m, d] = currentDayView.split('-').map(Number);
+  const dayDate = new Date(y, m - 1, d);
+  const today = nowPerth();
+  const isToday = dayDate.getFullYear() === today.getFullYear() && dayDate.getMonth() === today.getMonth() && dayDate.getDate() === today.getDate();
+
+  // Group jobs by vehicle, excluding unassigned
+  const groupedByVehicle = {};
+  jobs.forEach(j => {
+    const v = getVehicle(j);
+    if (!v || v === '__unassigned__') return; // Skip unassigned
+    if (!groupedByVehicle[v]) groupedByVehicle[v] = [];
+    groupedByVehicle[v].push(j);
+  });
+
+  // Initialize selectedVehicles on first load
+  if (selectedVehicles.size === 0) {
+    Object.keys(groupedByVehicle).forEach(v => selectedVehicles.add(v));
+  }
+
+  // Populate filter panel
+  let filterHtml = '';
+  Object.keys(groupedByVehicle).sort().forEach(vehicle => {
+    const color = getVehicleColor(vehicle);
+    const isChecked = selectedVehicles.has(vehicle);
+    filterHtml += `<div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" id="filter-${escHtml(vehicle)}" ${isChecked ? 'checked' : ''}
+        onchange="toggleVehicleFilter('${escHtml(vehicle)}', this.checked)"
+        style="width:14px;height:14px;cursor:pointer;">
+      <label for="filter-${escHtml(vehicle)}" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;margin:0;">
+        <span style="width:12px;height:12px;background:${color};border-radius:2px;"></span>
+        <span>${escHtml(vehicle)}</span>
+      </label>
+    </div>`;
+  });
+  document.getElementById('vehicleFilterList').innerHTML = filterHtml;
+
+  const bounds = new google.maps.LatLngBounds();
+
+  Object.entries(groupedByVehicle).forEach(([vehicle, vehicleJobs]) => {
+    // Only show selected vehicles
+    if (!selectedVehicles.has(vehicle)) return;
+
+    vehicleJobs.sort((a, b) => (parseInt(a.job_sequence) || 999) - (parseInt(b.job_sequence) || 999));
+
+    const routePath = [];
+    const routeColor = getVehicleColor(vehicle);
+
+    // Show vehicle location marker (live position if today, otherwise skip)
+    if (isToday) {
+      const vehicleData = vehiclesData.find(v => v.name === vehicle);
+      if (vehicleData && vehicleData.lat && vehicleData.lng) {
+        const marker = new google.maps.Marker({
+          position: { lat: vehicleData.lat, lng: vehicleData.lng },
+          map: dayMapView,
+          title: vehicle,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 12,
+            fillColor: routeColor,
+            fillOpacity: 0.9,
+            strokeColor: '#fff',
+            strokeWeight: 3
+          },
+          zIndex: 100
+        });
+
+        vehicleMarkers[vehicle] = marker;
+        bounds.extend(marker.getPosition());
+      }
+    }
+
+    // Add job markers with coordinates from geocoding
+    vehicleJobs.forEach((j, idx) => {
+      if (!j.address_lat || !j.address_lng) return;
+
+      const status = j.primary_job_status;
+      const jobColors = { 'info_recv': '#FFEB3B', 'in_transit': '#FF9800', 'dispatched': '#FF9800', 'completed': '#4CAF50', 'failed': '#F44336' };
+      const color = jobColors[status] || '#2196F3';
+      const doNum = j.do_number || j.id || '';
+      const sequence = idx + 1;
+
+      const marker = new google.maps.Marker({
+        position: { lat: parseFloat(j.address_lat), lng: parseFloat(j.address_lng) },
+        map: dayMapView,
+        title: doNum,
+        label: { text: String(sequence), color: '#fff', fontSize: '11px', fontWeight: 'bold' },
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 9,
+          fillColor: color,
+          fillOpacity: 0.9,
+          strokeColor: routeColor,
+          strokeWeight: 3
+        },
+        zIndex: 50
+      });
+
+      marker.addListener('click', () => {
+        const infoWindow = new google.maps.InfoWindow({
+          content: `<div style="min-width:250px;">
+            <div style="font-weight:600;margin-bottom:6px;color:${routeColor};">🚗 ${escHtml(vehicle)}</div>
+            <div style="font-weight:600;margin-bottom:4px;">#${sequence} ${escHtml(doNum)}</div>
+            <div style="font-size:11px;margin-bottom:4px;">${escHtml(j.deliver_to_collect_from || '')}</div>
+            <div style="font-size:11px;margin-bottom:4px;">${escHtml(j.address || '')}</div>
+            <div style="font-size:10px;color:#666;">${status}</div>
+          </div>`
+        });
+        infoWindow.open(dayMapView, marker);
+      });
+
+      jobMarkers[doNum] = marker;
+      bounds.extend(marker.getPosition());
+      routePath.push({ lat: parseFloat(j.address_lat), lng: parseFloat(j.address_lng) });
+    });
+
+    // Draw route line
+    if (routePath.length > 1) {
+      new google.maps.Polyline({
+        path: routePath,
+        geodesic: true,
+        strokeColor: routeColor,
+        strokeOpacity: 0.8,
+        strokeWeight: 4,
+        map: dayMapView,
+        zIndex: 1
+      });
+    }
+  });
+
+  // Fit map to all markers
+  if (Object.keys(vehicleMarkers).length > 0 || Object.keys(jobMarkers).length > 0) {
+    dayMapView.fitBounds(bounds, { padding: 50 });
+  }
+
+  // Sync zoom slider with map's current zoom
+  setTimeout(syncZoomSlider, 100);
 }
 
 loadData();
