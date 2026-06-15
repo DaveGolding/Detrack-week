@@ -106,6 +106,25 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (parsed.pathname === '/api/vehicles') {
+    const options = {
+      hostname: 'app.detrack.com',
+      path: '/api/v2/vehicles',
+      headers: { 'X-API-KEY': API_KEY, 'Content-Type': 'application/json' }
+    };
+    https.get(options, apiRes => {
+      let data = '';
+      apiRes.on('data', chunk => data += chunk);
+      apiRes.on('end', () => {
+        res.writeHead(apiRes.statusCode, { 'Content-Type': 'application/json' });
+        res.end(data);
+      });
+    }).on('error', err => {
+      res.writeHead(502); res.end(JSON.stringify({ error: err.message }));
+    });
+    return;
+  }
+
   const filePath = path.join(__dirname, 'detrack-weekly-board.html');
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }

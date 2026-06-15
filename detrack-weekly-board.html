@@ -686,6 +686,7 @@ const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
 let weekOffset = 0;
 let allJobs = {};
+let allVehicles = [];
 
 // Returns the current date/time as a Date object with local values matching Perth time.
 // Uses Intl.DateTimeFormat parts to avoid the en-AU DD/MM/YYYY -> new Date() parse bug
@@ -758,12 +759,92 @@ function getVehicle(j) {
   return j.assign_to || j.vehicle || j.driver_name || j.assigned_to || j.driver || '';
 }
 
+function getJobPeriod(j) {
+  const timeStr = j.time_window || j.time_window_from || j.job_time || '';
+  if (!timeStr) return 'am';
+
+  const timeMatch = timeStr.match(/(\d{1,2}):?(\d{2})?/);
+  if (!timeMatch) return 'am';
+
+  const hour = parseInt(timeMatch[1], 10);
+  return hour < 12 ? 'am' : 'pm';
+}
+
+function renderJobCard(j, ds, label, isUnassigned) {
+  const status = j.primary_job_status;
+  const badgeClass = status === 'info_recv' ? 'badge-info'
+    : status === 'completed' ? 'badge-completed'
+    : status === 'failed' ? 'badge-failed'
+    : 'badge-transit';
+  const badgeLabel = status === 'info_recv' ? 'Info Received'
+    : status === 'completed' ? 'Completed'
+    : status === 'failed' ? 'Failed'
+    : 'Booked In';
+  const doNum = j.do_number || j.id || '—';
+  const name = j.deliver_to_collect_from || j.name || '';
+  const address = j.address || '';
+  const phone = j.phone_number || j.phone || j.contact_number || '';
+  const timeWindow = j.time_window || (j.time_window_from && j.time_window_to ? j.time_window_from + ' – ' + j.time_window_to : '') || j.job_time || '';
+  const jobType = j.job_type || '';
+  const period = getJobPeriod(j).toUpperCase();
+
+  const canDrag = status !== 'completed' && status !== 'failed';
+  const jobDataStr = btoa(JSON.stringify(j));
+  const periodBg = period === 'AM' ? '#FFD54F' : '#E24B4A';
+  const periodText = period === 'AM' ? '#333' : '#fff';
+
+  return `<div class="job-card${canDrag ? '' : ' no-drag'}"
+    data-do="${escHtml(doNum)}"
+    data-id="${j.id || ''}"
+    data-date="${ds}"
+    data-job="${jobDataStr}"
+    data-name="${escHtml(name)}"
+    data-address="${escHtml(address)}"
+    data-status="${escHtml(badgeLabel)}"
+    data-vehicle="${escHtml(label)}"
+    data-time="${escHtml(timeWindow)}"
+    data-phone="${escHtml(phone)}"
+    data-instructions="${escHtml(j.instructions || '')}"
+    ${canDrag ? 'draggable="true"' : ''}
+    onmouseenter="showTooltip(event, this)"
+    onmouseleave="hideTooltip()"
+    onclick="hideTooltip();openModal('${escHtml(doNum)}')">
+    <div class="job-header">
+      <div class="job-do">${escHtml(doNum)}</div>
+      <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end;">
+        ${jobType ? `<div class="job-type ${jobType.toLowerCase().replace(/[^a-z0-9]/g, '')}">${escHtml(jobType)}</div>` : ''}
+        <div style="font-size:9px;font-weight:700;background:${periodBg};color:${periodText};padding:2px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:0.5px;">${period}</div>
+      </div>
+    </div>
+    ${name ? `<div class="job-name">${escHtml(name)}</div>` : ''}
+    ${address ? `<div class="job-address">${escHtml(address)}</div>` : ''}
+    ${phone ? `<div class="job-address">${escHtml(phone)}</div>` : ''}
+    <div class="job-footer">
+      <span class="badge ${badgeClass}">${badgeLabel}</span>
+    </div>
+    ${isUnassigned ? `<button class="move-date-btn" onclick="event.stopPropagation();openMovePopup(event.currentTarget)">📅 Move to date</button>` : ''}
+  </div>`;
+}
+
 async function fetchJobsForDate(dateStr) {
   const res = await fetch(`/api/jobs?date=${dateStr}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   const jobs = data.data || [];
   return jobs.filter(j => STATUSES.includes(j.primary_job_status));
+}
+
+async function fetchVehicles() {
+  try {
+    const res = await fetch('/api/vehicles');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const vehicles = data.data || data.vehicles || [];
+    return vehicles.map(v => v.vehicle_code || v.name || v.vehicle || '').filter(Boolean);
+  } catch (e) {
+    console.warn('Could not fetch vehicles:', e.message);
+    return [];
+  }
 }
 
 async function loadData() {
@@ -776,9 +857,14 @@ async function loadData() {
   updateWeekLabel(dates);
 
   try {
-    const results = await Promise.all(dates.map(d => fetchJobsForDate(formatDate(d))));
+    const [vehicles, ...jobResults] = await Promise.all([
+      fetchVehicles(),
+      ...dates.map(d => fetchJobsForDate(formatDate(d)))
+    ]);
+
+    allVehicles = vehicles;
     allJobs = {};
-    dates.forEach((d, i) => { allJobs[formatDate(d)] = results[i]; });
+    dates.forEach((d, i) => { allJobs[formatDate(d)] = jobResults[i]; });
 
     renderBoard(dates);
     setStatus('live', 'Live');
@@ -802,7 +888,7 @@ function renderEmpty(dates) {
 function renderBoard(dates) {
   const container = document.getElementById('boardContainer');
 
-  const jobsByVehicleByDate = {};
+  const jobsByVehicleByDateByPeriod = {};
   const vehicleSet = new Set();
   let totalJobs = 0;
   let infoCount = 0;
@@ -820,12 +906,17 @@ function renderBoard(dates) {
       if (j.primary_job_status === 'completed') completedCount++;
       if (j.primary_job_status === 'failed') failedCount++;
       const v = getVehicle(j) || '__unassigned__';
+      const period = getJobPeriod(j);
       vehicleSet.add(v);
-      if (!jobsByVehicleByDate[v]) jobsByVehicleByDate[v] = {};
-      if (!jobsByVehicleByDate[v][ds]) jobsByVehicleByDate[v][ds] = [];
-      jobsByVehicleByDate[v][ds].push(j);
+      if (!jobsByVehicleByDateByPeriod[v]) jobsByVehicleByDateByPeriod[v] = {};
+      if (!jobsByVehicleByDateByPeriod[v][ds]) jobsByVehicleByDateByPeriod[v][ds] = {};
+      if (!jobsByVehicleByDateByPeriod[v][ds][period]) jobsByVehicleByDateByPeriod[v][ds][period] = [];
+      jobsByVehicleByDateByPeriod[v][ds][period].push(j);
     });
   });
+
+  // Add all vehicles from the API, even if they don't have jobs
+  allVehicles.forEach(v => vehicleSet.add(v));
 
   const vehicles = Array.from(vehicleSet).sort((a, b) => {
     if (a === '__unassigned__') return 1;
@@ -883,62 +974,15 @@ function renderBoard(dates) {
 
     dates.forEach(d => {
       const ds = formatDate(d);
-      const jobs = (jobsByVehicleByDate[v] && jobsByVehicleByDate[v][ds]) || [];
+      const dayData = jobsByVehicleByDateByPeriod[v] && jobsByVehicleByDateByPeriod[v][ds];
+      const allDayJobs = [...(dayData && dayData['am'] || []), ...(dayData && dayData['pm'] || [])];
 
       html += `<div class="cell" data-date="${ds}" style="vertical-align:top;background:${palette.row};">`;
-      if (jobs.length === 0) {
+      if (allDayJobs.length === 0) {
         html += `<span class="empty-cell">—</span>`;
       } else {
-        jobs.forEach(j => {
-          const status = j.primary_job_status;
-          const badgeClass = status === 'info_recv' ? 'badge-info'
-            : status === 'completed' ? 'badge-completed'
-            : status === 'failed' ? 'badge-failed'
-            : 'badge-transit';
-          const badgeLabel = status === 'info_recv' ? 'Info Received'
-            : status === 'completed' ? 'Completed'
-            : status === 'failed' ? 'Failed'
-            : 'Booked In';
-          // Use do_number if available; fall back to id or '—'
-          const doNum = j.do_number || j.id || '—';
-          const name = j.deliver_to_collect_from || j.name || '';
-          const address = j.address || '';
-          const phone = j.phone_number || j.phone || j.contact_number || '';
-          const timeWindow = j.time_window || (j.time_window_from && j.time_window_to ? j.time_window_from + ' – ' + j.time_window_to : '') || j.job_time || '';
-          const serviceTime = j.service_time ? j.service_time + ' min' : '';
-          const jobType = j.job_type || '';
-
-          const canDrag = status !== 'completed' && status !== 'failed';
-          // Store full job data so we can display it without fetching
-          const jobDataStr = btoa(JSON.stringify(j));
-          html += `<div class="job-card${canDrag ? '' : ' no-drag'}"
-            data-do="${escHtml(doNum)}"
-            data-id="${j.id || ''}"
-            data-date="${ds}"
-            data-job="${jobDataStr}"
-            data-name="${escHtml(name)}"
-            data-address="${escHtml(address)}"
-            data-status="${escHtml(badgeLabel)}"
-            data-vehicle="${escHtml(label)}"
-            data-time="${escHtml(timeWindow)}"
-            data-phone="${escHtml(phone)}"
-            data-instructions="${escHtml(j.instructions || '')}"
-            ${canDrag ? 'draggable="true"' : ''}
-            onmouseenter="showTooltip(event, this)"
-            onmouseleave="hideTooltip()"
-            onclick="hideTooltip();openModal('${escHtml(doNum)}')">
-            <div class="job-header">
-              <div class="job-do">${escHtml(doNum)}</div>
-              ${jobType ? `<div class="job-type ${jobType.toLowerCase().replace(/[^a-z0-9]/g, '')}">${escHtml(jobType)}</div>` : ''}
-            </div>
-            ${name ? `<div class="job-name">${escHtml(name)}</div>` : ''}
-            ${address ? `<div class="job-address">${escHtml(address)}</div>` : ''}
-            ${phone ? `<div class="job-address">${escHtml(phone)}</div>` : ''}
-            <div class="job-footer">
-              <span class="badge ${badgeClass}">${badgeLabel}</span>
-            </div>
-            ${isUnassigned ? `<button class="move-date-btn" onclick="event.stopPropagation();openMovePopup(event.currentTarget)">📅 Move to date</button>` : ''}
-          </div>`;
+        allDayJobs.forEach(j => {
+          html += renderJobCard(j, ds, label, isUnassigned);
         });
       }
       html += `</div>`;
