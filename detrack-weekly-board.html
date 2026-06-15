@@ -779,21 +779,27 @@
       <button class="day-nav-btn" id="dayNextBtn" onclick="nextDay()">Next →</button>
       <button id="dayMapBtn" onclick="toggleDayMap()">🗺️ View Map</button>
     </div>
-    <div id="dayMapContainer" style="display:none;position:relative;"></div>
-    <div id="vehicleFilterPanel" style="position:fixed;top:76px;left:20px;background:white;padding:12px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);z-index:1000;max-width:200px;max-height:calc(100vh - 150px);overflow-y:auto;border:0.5px solid #ccc;display:none;">
-      <div style="font-weight:600;margin-bottom:8px;font-size:12px;color:#333;">Filter Vehicles</div>
-      <div id="vehicleFilterList"></div>
-    </div>
-    <div id="zoomControl" style="position:fixed;top:76px;right:20px;background:white;padding:12px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);z-index:1000;display:none;flex-direction:column;align-items:center;gap:8px;">
-      <div style="font-size:11px;font-weight:600;color:#333;">Zoom</div>
-      <input type="range" id="zoomSlider" min="8" max="18" value="11" style="width:120px;cursor:pointer;writing-mode:bt-lr;-webkit-appearance:slider-vertical;appearance:slider-vertical;height:100px;" onchange="setMapZoom(this.value)" oninput="setMapZoom(this.value)">
-      <div id="zoomLevel" style="font-size:11px;color:#666;">11</div>
-    </div>
-    <div id="dayContentContainer" style="padding: 20px; overflow-y: auto; height: calc(100vh - 130px);">
-      <div class="loading-overlay">
-        <div class="spinner"></div>
-        <div>Loading day view...</div>
+    <div style="display:flex;height:calc(100vh - 130px);gap:0;">
+      <div id="dayContentContainer" style="padding: 20px; overflow-y: auto; flex:1;">
+        <div class="loading-overlay">
+          <div class="spinner"></div>
+          <div>Loading day view...</div>
+        </div>
       </div>
+      <div id="dayMapContainer" style="width:40%;display:none;position:relative;flex-shrink:0;">
+        <div id="vehicleFilterPanel" style="position:absolute;top:10px;left:10px;background:white;padding:12px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);z-index:100;max-width:180px;max-height:300px;overflow-y:auto;border:0.5px solid #ccc;display:none;cursor:move;user-select:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:600;font-size:12px;color:#333;">
+            <span style="cursor:move;">⋮⋮ Filter Vehicles</span>
+            <button id="filterLockBtn" onclick="toggleFilterLock()" style="background:none;border:none;font-size:16px;cursor:pointer;padding:0;color:#333;">🔓</button>
+          </div>
+          <div id="vehicleFilterList"></div>
+        </div>
+      </div>
+    </div>
+    <div id="zoomControl" style="position:fixed;bottom:30px;left:30px;background:white;padding:8px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15);z-index:1000;display:none;flex-direction:column;align-items:center;gap:6px;cursor:move;user-select:none;">
+      <div style="font-size:10px;font-weight:600;color:#333;cursor:move;">⋮⋮ Zoom</div>
+      <input type="range" id="zoomSlider" min="8" max="18" value="11" style="width:80px;cursor:pointer;writing-mode:bt-lr;-webkit-appearance:slider-vertical;appearance:slider-vertical;height:60px;" onchange="setMapZoom(this.value)" oninput="setMapZoom(this.value)">
+      <div id="zoomLevel" style="font-size:9px;color:#666;">11</div>
     </div>
   </div>
 </div>
@@ -1530,6 +1536,55 @@ function syncZoomSlider() {
   }
 }
 
+// Make panels draggable
+let isDraggableEnabled = {};
+
+function makeDraggable(elementId) {
+  const element = document.getElementById(elementId);
+  isDraggableEnabled[elementId] = true;
+  let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+
+  const onMouseDown = (e) => {
+    if (!isDraggableEnabled[elementId]) return;
+    pos3 = e.clientX;
+    pos4 = e.clientY;
+    document.onmouseup = onMouseUp;
+    document.onmousemove = onMouseMove;
+  };
+
+  const onMouseMove = (e) => {
+    pos1 = pos3 - e.clientX;
+    pos2 = pos4 - e.clientY;
+    pos3 = e.clientX;
+    pos4 = e.clientY;
+    element.style.top = (element.offsetTop - pos2) + 'px';
+    element.style.left = (element.offsetLeft - pos1) + 'px';
+  };
+
+  const onMouseUp = () => {
+    document.onmouseup = null;
+    document.onmousemove = null;
+  };
+
+  element.onmousedown = onMouseDown;
+}
+
+function toggleFilterLock() {
+  const btn = document.getElementById('filterLockBtn');
+  const panel = document.getElementById('vehicleFilterPanel');
+  isDraggableEnabled['vehicleFilterPanel'] = !isDraggableEnabled['vehicleFilterPanel'];
+
+  if (isDraggableEnabled['vehicleFilterPanel']) {
+    btn.textContent = '🔓';
+    panel.style.cursor = 'move';
+  } else {
+    btn.textContent = '🔒';
+    panel.style.cursor = 'default';
+  }
+}
+
+makeDraggable('vehicleFilterPanel');
+
 function switchView(view) {
   currentView = view;
   document.getElementById('weekViewContainer').classList.toggle('active', view === 'week');
@@ -1610,10 +1665,9 @@ function prevDay() {
   date.setDate(date.getDate() - 1);
   currentDayView = formatDate(date);
   renderDayView();
-  document.getElementById('dayMapContainer').style.display = 'none';
-  document.getElementById('dayContentContainer').style.display = 'block';
-  document.getElementById('vehicleFilterPanel').style.display = 'none';
-  document.getElementById('dayMapBtn').classList.remove('active');
+  if (document.getElementById('dayMapContainer').style.display !== 'none') {
+    initDayMap();
+  }
 }
 
 function nextDay() {
@@ -1623,29 +1677,25 @@ function nextDay() {
   date.setDate(date.getDate() + 1);
   currentDayView = formatDate(date);
   renderDayView();
-  document.getElementById('dayMapContainer').style.display = 'none';
-  document.getElementById('dayContentContainer').style.display = 'block';
-  document.getElementById('vehicleFilterPanel').style.display = 'none';
-  document.getElementById('dayMapBtn').classList.remove('active');
+  if (document.getElementById('dayMapContainer').style.display !== 'none') {
+    initDayMap();
+  }
 }
 
 function toggleDayMap() {
   const mapContainer = document.getElementById('dayMapContainer');
-  const contentContainer = document.getElementById('dayContentContainer');
   const filterPanel = document.getElementById('vehicleFilterPanel');
   const zoomControl = document.getElementById('zoomControl');
   const btn = document.getElementById('dayMapBtn');
 
   if (mapContainer.style.display === 'none') {
     mapContainer.style.display = 'block';
-    contentContainer.style.display = 'none';
     filterPanel.style.display = 'block';
     zoomControl.style.display = 'flex';
     btn.classList.add('active');
     initDayMap();
   } else {
     mapContainer.style.display = 'none';
-    contentContainer.style.display = 'block';
     filterPanel.style.display = 'none';
     zoomControl.style.display = 'none';
     btn.classList.remove('active');
@@ -1661,13 +1711,14 @@ function initDayMap() {
       zoom: 11,
       center: { lat: -31.95, lng: 115.86 },
       mapTypeControl: true,
-      scrollwheel: false,
+      scrollwheel: true,
     });
-    // Sync zoom slider when user zooms the map
-    dayMapView.addListener('zoom_changed', syncZoomSlider);
   }
 
-  google.maps.event.trigger(dayMapView, 'resize');
+  // Force map to recalculate size after container change
+  setTimeout(() => {
+    google.maps.event.trigger(dayMapView, 'resize');
+  }, 100);
 
   // Clear existing markers
   Object.values(vehicleMarkers).forEach(m => m.setMap(null));
@@ -1808,13 +1859,14 @@ function initDayMap() {
     }
   });
 
-  // Fit map to all markers
-  if (Object.keys(vehicleMarkers).length > 0 || Object.keys(jobMarkers).length > 0) {
-    dayMapView.fitBounds(bounds, { padding: 50 });
-  }
-
-  // Sync zoom slider with map's current zoom
-  setTimeout(syncZoomSlider, 100);
+  // Fit map to all markers after resize
+  setTimeout(() => {
+    if (Object.keys(vehicleMarkers).length > 0 || Object.keys(jobMarkers).length > 0) {
+      dayMapView.fitBounds(bounds, { padding: 50 });
+    }
+    // Sync zoom slider with map's current zoom
+    syncZoomSlider();
+  }, 200);
 }
 
 loadData();

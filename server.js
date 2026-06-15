@@ -35,6 +35,67 @@ mdns.on('query', query => {
   }
 });
 
+// Geocode cache
+const GEOCODE_CACHE_FILE = path.join(__dirname, 'geocode-cache.json');
+let geocodeCache = {};
+try {
+  if (fs.existsSync(GEOCODE_CACHE_FILE)) {
+    geocodeCache = JSON.parse(fs.readFileSync(GEOCODE_CACHE_FILE, 'utf8'));
+  }
+} catch (err) {
+  console.error('Failed to load geocode cache:', err.message);
+}
+
+function saveGeocodeCache() {
+  try {
+    fs.writeFileSync(GEOCODE_CACHE_FILE, JSON.stringify(geocodeCache, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to save geocode cache:', err.message);
+  }
+}
+
+function geocodeAddress(address) {
+  return new Promise((resolve) => {
+    if (geocodeCache[address]) {
+      return resolve(geocodeCache[address]);
+    }
+
+    const query = encodeURIComponent(address + ', Perth, Western Australia');
+    const options = {
+      hostname: 'maps.googleapis.com',
+      path: `/maps/api/geocode/json?address=${query}&key=${GOOGLE_API_KEY}`,
+      method: 'GET'
+    };
+
+    https.get(options, (apiRes) => {
+      let data = '';
+      apiRes.on('data', chunk => data += chunk);
+      apiRes.on('end', () => {
+        try {
+          const result = JSON.parse(data);
+          if (result.status === 'OK' && result.results && result.results[0]) {
+            const loc = result.results[0].geometry.location;
+            const coords = { lat: loc.lat, lng: loc.lng };
+            geocodeCache[address] = coords;
+            saveGeocodeCache();
+            console.log(`[Geocode OK] ${address}`);
+            resolve(coords);
+          } else {
+            console.warn(`[Geocode ${result.status}] ${address}`);
+            resolve(null);
+          }
+        } catch (e) {
+          console.error('[Geocode parse error]', e.message);
+          resolve(null);
+        }
+      });
+    }).on('error', (err) => {
+      console.error('[Geocode request error]', err.message);
+      resolve(null);
+    });
+  });
+}
+
 const server = http.createServer((req, res) => {
   const parsed = url.parse(req.url, true);
 
@@ -98,9 +159,26 @@ const server = http.createServer((req, res) => {
     https.get(options, apiRes => {
       let data = '';
       apiRes.on('data', chunk => data += chunk);
-      apiRes.on('end', () => {
-        res.writeHead(apiRes.statusCode, { 'Content-Type': 'application/json' });
-        res.end(data);
+      apiRes.on('end', async () => {
+        try {
+          const jobData = JSON.parse(data);
+          if (jobData.data && Array.isArray(jobData.data)) {
+            const geocodingPromises = jobData.data.map(async (job) => {
+              if (job.address && (!job.address_lat || !job.address_lng)) {
+                const coords = await geocodeAddress(job.address);
+                if (coords) {
+                  job.address_lat = coords.lat;
+                  job.address_lng = coords.lng;
+                }
+              }
+            });
+            await Promise.all(geocodingPromises);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(jobData));
+        } catch (err) {
+          res.writeHead(502); res.end(JSON.stringify({ error: err.message }));
+        }
       });
     }).on('error', err => {
       res.writeHead(502); res.end(JSON.stringify({ error: err.message }));
