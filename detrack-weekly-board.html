@@ -814,6 +814,11 @@ let weekOffset = 0;
 let allJobs = {};
 let allVehicles = [];
 
+// Encode UTF-8 strings to base64 (handles non-Latin1 characters)
+function encodeBase64(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
 // Returns the current date/time as a Date object with local values matching Perth time.
 // Uses Intl.DateTimeFormat parts to avoid the en-AU DD/MM/YYYY -> new Date() parse bug
 // where the browser misreads the locale string as MM/DD/YYYY (American order).
@@ -923,7 +928,7 @@ function renderJobCard(j, ds, label, isUnassigned) {
   const period = getJobPeriod(j).toUpperCase();
 
   const canDrag = status !== 'completed' && status !== 'failed';
-  const jobDataStr = btoa(JSON.stringify(j));
+  const jobDataStr = encodeBase64(JSON.stringify(j));
   const periodBg = period === 'AM' ? '#FFD54F' : '#E24B4A';
   const periodText = period === 'AM' ? '#333' : '#fff';
 
@@ -1649,7 +1654,7 @@ function renderDayView() {
       const phone = j.phone_number || j.phone || j.contact_number || '';
       const sequence = j.job_sequence || (idx + 1);
 
-      const jobDataStr = btoa(JSON.stringify(j));
+      const jobDataStr = encodeBase64(JSON.stringify(j));
 
       html += `<div style="padding:12px;background:var(--surface2);border-radius:var(--radius-sm);cursor:pointer;"
         onclick="openModal('${escHtml(doNum)}')">
