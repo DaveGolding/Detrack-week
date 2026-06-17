@@ -758,7 +758,7 @@
       <span class="legend-item"><span class="badge badge-completed">Completed</span></span>
       <span class="legend-item"><span class="badge badge-failed">Failed</span></span>
       <span class="legend-item"><span class="badge badge-unassigned">Unassigned</span></span>
-      <span class="legend-item" style="margin-left:auto;font-size:12px;color:var(--text-faint)">Timezone: Perth (AWST) &nbsp;|&nbsp; Auto-refreshes on page load</span>
+      <span class="legend-item" style="margin-left:auto;font-size:12px;color:var(--text-faint)">Timezone: Perth (AWST) &nbsp;|&nbsp; Auto-refreshes every 30s</span>
     </div>
 
     <div class="grid-wrapper">
@@ -1870,6 +1870,35 @@ function initDayMap() {
 }
 
 loadData();
+
+// Auto-refresh every 30 seconds to check for new jobs
+const POLL_INTERVAL = 30000; // 30 seconds
+let lastJobCount = 0;
+
+async function checkForNewJobs() {
+  try {
+    const dates = Array.from(document.querySelectorAll('[data-date]')).map(el => el.getAttribute('data-date'));
+    if (dates.length === 0) return;
+
+    // Check the first visible date for new jobs
+    const date = dates[0];
+    const res = await fetch(`/api/jobs?date=${date}`);
+    if (!res.ok) return;
+    const jobData = await res.json();
+    const currentJobCount = jobData.data?.length || 0;
+
+    if (currentJobCount > lastJobCount && lastJobCount > 0) {
+      console.log(`[Auto-refresh] Detected ${currentJobCount - lastJobCount} new job(s), refreshing...`);
+      loadData();
+    }
+    lastJobCount = currentJobCount;
+  } catch (e) {
+    console.log('[Auto-refresh] Poll check skipped:', e.message);
+  }
+}
+
+// Poll every 30 seconds
+setInterval(checkForNewJobs, POLL_INTERVAL);
 </script>
 </body>
 </html>
