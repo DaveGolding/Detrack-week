@@ -1821,7 +1821,7 @@ function initDayMap() {
       const jobColors = { 'info_recv': '#FFEB3B', 'in_transit': '#FF9800', 'dispatched': '#FF9800', 'completed': '#4CAF50', 'failed': '#F44336' };
       const color = jobColors[status] || '#2196F3';
       const doNum = j.do_number || j.id || '';
-      const sequence = idx + 1;
+      const sequence = j.job_sequence || (idx + 1);
 
       const marker = new google.maps.Marker({
         position: { lat: parseFloat(j.address_lat), lng: parseFloat(j.address_lng) },
