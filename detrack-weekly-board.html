@@ -1107,6 +1107,13 @@ function renderBoard(dates) {
       const dayData = jobsByVehicleByDateByPeriod[v] && jobsByVehicleByDateByPeriod[v][ds];
       const allDayJobs = [...(dayData && dayData['am'] || []), ...(dayData && dayData['pm'] || [])];
 
+      // Sort jobs by job_sequence
+      allDayJobs.sort((a, b) => {
+        const seqA = a.job_sequence !== null && a.job_sequence !== undefined ? parseInt(a.job_sequence) : 999;
+        const seqB = b.job_sequence !== null && b.job_sequence !== undefined ? parseInt(b.job_sequence) : 999;
+        return seqA - seqB;
+      });
+
       html += `<div class="cell" data-date="${ds}" style="vertical-align:top;background:${palette.row};">`;
       if (allDayJobs.length === 0) {
         html += `<span class="empty-cell">—</span>`;
