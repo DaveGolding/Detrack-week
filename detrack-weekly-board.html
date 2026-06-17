@@ -947,6 +947,7 @@ function renderJobCard(j, ds, label, isUnassigned) {
     ${phone ? `<div class="job-address">${escHtml(phone)}</div>` : ''}
     <div class="job-footer">
       <span class="badge ${badgeClass}">${badgeLabel}</span>
+      ${j.job_sequence ? `<div style="font-size:11px;font-weight:600;color:var(--text-faint);padding:2px 6px;border-radius:3px;background:var(--surface2);">Seq: ${escHtml(String(j.job_sequence))}</div>` : ''}
     </div>
     ${isUnassigned ? `<button class="move-date-btn" onclick="event.stopPropagation();openMovePopup(event.currentTarget)">📅 Move to date</button>` : ''}
   </div>`;
