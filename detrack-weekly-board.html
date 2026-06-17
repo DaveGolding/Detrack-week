@@ -1619,7 +1619,11 @@ function renderDayView() {
 
   let html = '';
   Object.entries(groupedByVehicle).forEach(([vehicle, vehicleJobs]) => {
-    vehicleJobs.sort((a, b) => (parseInt(a.job_sequence) || 999) - (parseInt(b.job_sequence) || 999));
+    vehicleJobs.sort((a, b) => {
+      const seqA = a.job_sequence !== null && a.job_sequence !== undefined ? parseInt(a.job_sequence) : 999;
+      const seqB = b.job_sequence !== null && b.job_sequence !== undefined ? parseInt(b.job_sequence) : 999;
+      return seqA - seqB;
+    });
 
     const isUnassigned = vehicle === '__unassigned__';
     const label = isUnassigned ? 'Unassigned' : vehicle;
@@ -1773,7 +1777,11 @@ function initDayMap() {
     // Only show selected vehicles
     if (!selectedVehicles.has(vehicle)) return;
 
-    vehicleJobs.sort((a, b) => (parseInt(a.job_sequence) || 999) - (parseInt(b.job_sequence) || 999));
+    vehicleJobs.sort((a, b) => {
+      const seqA = a.job_sequence !== null && a.job_sequence !== undefined ? parseInt(a.job_sequence) : 999;
+      const seqB = b.job_sequence !== null && b.job_sequence !== undefined ? parseInt(b.job_sequence) : 999;
+      return seqA - seqB;
+    });
 
     const routePath = [];
     const routeColor = getVehicleColor(vehicle);
