@@ -1776,7 +1776,8 @@ function initDayMap() {
       </label>
     </div>`;
   });
-  document.getElementById('vehicleFilterList').innerHTML = filterHtml;
+  const filterPanel = document.getElementById('vehicleFilterList');
+  if (filterPanel) filterPanel.innerHTML = filterHtml;
 
   const bounds = new google.maps.LatLngBounds();
 
