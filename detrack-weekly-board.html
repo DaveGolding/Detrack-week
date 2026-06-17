@@ -1636,7 +1636,7 @@ function renderDayView() {
       const name = j.deliver_to_collect_from || j.name || '';
       const address = j.address || '';
       const phone = j.phone_number || j.phone || j.contact_number || '';
-      const sequence = idx + 1;
+      const sequence = j.job_sequence || (idx + 1);
 
       const jobDataStr = btoa(JSON.stringify(j));
 
