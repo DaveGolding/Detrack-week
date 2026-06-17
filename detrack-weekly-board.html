@@ -896,6 +896,14 @@ function getJobPeriod(j) {
   return hour < 12 ? 'am' : 'pm';
 }
 
+function sortJobsBySequence(jobs) {
+  return jobs.sort((a, b) => {
+    const seqA = a.job_sequence !== null && a.job_sequence !== undefined ? parseInt(a.job_sequence) : 999;
+    const seqB = b.job_sequence !== null && b.job_sequence !== undefined ? parseInt(b.job_sequence) : 999;
+    return seqA - seqB;
+  });
+}
+
 function renderJobCard(j, ds, label, isUnassigned) {
   const status = j.primary_job_status;
   const badgeClass = status === 'info_recv' ? 'badge-info'
@@ -1108,11 +1116,7 @@ function renderBoard(dates) {
       const allDayJobs = [...(dayData && dayData['am'] || []), ...(dayData && dayData['pm'] || [])];
 
       // Sort jobs by job_sequence
-      allDayJobs.sort((a, b) => {
-        const seqA = a.job_sequence !== null && a.job_sequence !== undefined ? parseInt(a.job_sequence) : 999;
-        const seqB = b.job_sequence !== null && b.job_sequence !== undefined ? parseInt(b.job_sequence) : 999;
-        return seqA - seqB;
-      });
+      sortJobsBySequence(allDayJobs);
 
       html += `<div class="cell" data-date="${ds}" style="vertical-align:top;background:${palette.row};">`;
       if (allDayJobs.length === 0) {
@@ -1626,11 +1630,7 @@ function renderDayView() {
 
   let html = '';
   Object.entries(groupedByVehicle).forEach(([vehicle, vehicleJobs]) => {
-    vehicleJobs.sort((a, b) => {
-      const seqA = a.job_sequence !== null && a.job_sequence !== undefined ? parseInt(a.job_sequence) : 999;
-      const seqB = b.job_sequence !== null && b.job_sequence !== undefined ? parseInt(b.job_sequence) : 999;
-      return seqA - seqB;
-    });
+    sortJobsBySequence(vehicleJobs);
 
     const isUnassigned = vehicle === '__unassigned__';
     const label = isUnassigned ? 'Unassigned' : vehicle;
@@ -1784,11 +1784,7 @@ function initDayMap() {
     // Only show selected vehicles
     if (!selectedVehicles.has(vehicle)) return;
 
-    vehicleJobs.sort((a, b) => {
-      const seqA = a.job_sequence !== null && a.job_sequence !== undefined ? parseInt(a.job_sequence) : 999;
-      const seqB = b.job_sequence !== null && b.job_sequence !== undefined ? parseInt(b.job_sequence) : 999;
-      return seqA - seqB;
-    });
+    sortJobsBySequence(vehicleJobs);
 
     const routePath = [];
     const routeColor = getVehicleColor(vehicle);
