@@ -947,7 +947,7 @@ function renderJobCard(j, ds, label, isUnassigned) {
     ${phone ? `<div class="job-address">${escHtml(phone)}</div>` : ''}
     <div class="job-footer">
       <span class="badge ${badgeClass}">${badgeLabel}</span>
-      ${j.position !== undefined && j.position !== null ? `<div style="font-size:11px;font-weight:600;color:var(--text-faint);padding:2px 6px;border-radius:3px;background:var(--surface2);">Seq: ${escHtml(String(parseInt(j.position) + 1))}</div>` : ''}
+      ${j.job_sequence ? `<div style="font-size:11px;font-weight:600;color:var(--text-faint);padding:2px 6px;border-radius:3px;background:var(--surface2);">Seq: ${escHtml(String(j.job_sequence))}</div>` : ''}
     </div>
     ${isUnassigned ? `<button class="move-date-btn" onclick="event.stopPropagation();openMovePopup(event.currentTarget)">📅 Move to date</button>` : ''}
   </div>`;
@@ -1619,7 +1619,7 @@ function renderDayView() {
 
   let html = '';
   Object.entries(groupedByVehicle).forEach(([vehicle, vehicleJobs]) => {
-    vehicleJobs.sort((a, b) => (parseInt(a.position) || 999) - (parseInt(b.position) || 999));
+    vehicleJobs.sort((a, b) => (parseInt(a.job_sequence) || 999) - (parseInt(b.job_sequence) || 999));
 
     const isUnassigned = vehicle === '__unassigned__';
     const label = isUnassigned ? 'Unassigned' : vehicle;
@@ -1636,7 +1636,7 @@ function renderDayView() {
       const name = j.deliver_to_collect_from || j.name || '';
       const address = j.address || '';
       const phone = j.phone_number || j.phone || j.contact_number || '';
-      const sequence = (parseInt(j.position) || 0) + 1;
+      const sequence = j.job_sequence || (idx + 1);
 
       const jobDataStr = btoa(JSON.stringify(j));
 
@@ -1773,7 +1773,7 @@ function initDayMap() {
     // Only show selected vehicles
     if (!selectedVehicles.has(vehicle)) return;
 
-    vehicleJobs.sort((a, b) => (parseInt(a.position) || 999) - (parseInt(b.position) || 999));
+    vehicleJobs.sort((a, b) => (parseInt(a.job_sequence) || 999) - (parseInt(b.job_sequence) || 999));
 
     const routePath = [];
     const routeColor = getVehicleColor(vehicle);
