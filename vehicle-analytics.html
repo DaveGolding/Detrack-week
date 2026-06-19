@@ -24,6 +24,46 @@
     .logo { font-size: 18px; font-weight: 700; color: #E8650A; display: flex; align-items: center; gap: 8px; }
     .logo-icon { width: 32px; height: 32px; background: #E8650A; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 18px; color: white; }
 
+    .module-menu { display: flex; gap: 0; align-items: center; }
+    .module-menu-btn {
+      padding: 8px 12px;
+      background: transparent;
+      border: 1px solid rgba(232,101,10,0.3);
+      color: #E8650A;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .module-menu-btn:hover { background: rgba(232,101,10,0.1); border-color: #E8650A; }
+    .module-dropdown-analytics {
+      position: absolute;
+      background: #222;
+      border: 1px solid rgba(232,101,10,0.3);
+      border-radius: 4px;
+      min-width: 180px;
+      margin-top: 4px;
+      display: none;
+      z-index: 1000;
+    }
+    .module-dropdown-analytics.active { display: block; }
+    .module-dropdown-analytics a {
+      display: block;
+      padding: 10px 14px;
+      color: #ddd;
+      text-decoration: none;
+      font-size: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      transition: background 0.2s;
+    }
+    .module-dropdown-analytics a:last-child { border-bottom: none; }
+    .module-dropdown-analytics a:hover { background: rgba(232,101,10,0.2); color: #E8650A; }
+    .module-dropdown-analytics a.active { background: rgba(232,101,10,0.3); color: #E8650A; font-weight: 600; }
+
     .nav-tabs { display: flex; gap: 0; margin-left: auto; }
     .nav-tab { padding: 12px 20px; cursor: pointer; border: none; background: transparent; color: #999; font-size: 14px; transition: all 0.2s; }
     .nav-tab.active { color: #E8650A; border-bottom: 2px solid #E8650A; }
@@ -173,9 +213,18 @@
 </head>
 <body>
   <div class="topbar">
-    <div class="logo">
+    <div class="logo" style="display: flex; align-items: center; gap: 12px;">
       <div class="logo-icon">🚗</div>
       Vehicle Analytics
+      <div class="module-menu" style="position: relative; margin-left: 20px;">
+        <button class="module-menu-btn" onclick="toggleModuleMenuAnalytics(event)">📊 Module ▼</button>
+        <div class="module-dropdown-analytics" id="moduleDropdownAnalytics">
+          <a href="/" onclick="return true;">📋 Weekly Board</a>
+          <a href="#tracking" onclick="switchTab('tracking'); return false;" class="active">🗺️ Live Tracking</a>
+          <a href="#metrics" onclick="switchTab('metrics'); return false;">📈 Analytics</a>
+          <a href="#reports" onclick="switchTab('reports'); return false;">📄 Reports</a>
+        </div>
+      </div>
     </div>
     <div class="nav-tabs">
       <button class="nav-tab active" onclick="switchTab('tracking')">Live Tracking</button>
@@ -247,6 +296,19 @@
     let map;
     let selectedVehicleId = null;
     let vehicleMarkers = {};
+
+    // Module Menu Toggle
+    function toggleModuleMenuAnalytics(event) {
+      event.stopPropagation();
+      const dropdown = document.getElementById('moduleDropdownAnalytics');
+      dropdown.classList.toggle('active');
+      document.addEventListener('click', function closeMenu(e) {
+        if (!e.target.closest('.module-menu')) {
+          dropdown.classList.remove('active');
+          document.removeEventListener('click', closeMenu);
+        }
+      });
+    }
 
     // Initialize
     function init() {

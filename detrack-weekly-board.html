@@ -119,6 +119,75 @@
 
   .nav-btn:hover { background: rgba(255,255,255,0.25); }
 
+  .module-switcher {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .module-btn {
+    background: rgba(255,255,255,0.15);
+    border: none;
+    color: white;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.2s;
+  }
+
+  .module-btn:hover {
+    background: rgba(255,255,255,0.25);
+  }
+
+  .module-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    min-width: 200px;
+    margin-top: 8px;
+    z-index: 1000;
+    display: none;
+  }
+
+  .module-dropdown.active {
+    display: block;
+  }
+
+  .module-dropdown a {
+    display: block;
+    padding: 12px 16px;
+    color: #1A3550;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.2s;
+    border-bottom: 1px solid #eee;
+  }
+
+  .module-dropdown a:last-child {
+    border-bottom: none;
+  }
+
+  .module-dropdown a:hover {
+    background: #f5f5f5;
+  }
+
+  .module-dropdown a.active {
+    background: #e8f4f8;
+    color: #E87722;
+    font-weight: 600;
+  }
+
   .header-right {
     display: flex;
     align-items: center;
@@ -730,6 +799,15 @@
   </div>
 
   <div class="header-right">
+    <div class="module-switcher">
+      <button class="module-btn" id="moduleSwitcher" onclick="toggleModuleMenu()">📊 Module</button>
+      <div class="module-dropdown" id="moduleDropdown">
+        <a href="#" onclick="goToModule('board'); return false;" class="active">📋 Weekly Board</a>
+        <a href="#" onclick="goToModule('tracking'); return false;">🗺️ Live Tracking</a>
+        <a href="#" onclick="goToModule('analytics'); return false;">📈 Analytics</a>
+        <a href="#" onclick="goToModule('reports'); return false;">📄 Reports</a>
+      </div>
+    </div>
     <span class="last-updated" id="lastUpdated"></span>
     <span><span class="status-dot" id="statusDot"></span><span id="statusText" style="font-size:12px;color:rgba(255,255,255,0.75)"></span></span>
     <button class="view-toggle-btn active" id="weekViewBtn" onclick="switchView('week')" title="Week View">📅 Week</button>
@@ -813,6 +891,43 @@ const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 let weekOffset = 0;
 let allJobs = {};
 let allVehicles = [];
+let currentModule = 'board';
+
+// Module Switcher Functions
+function toggleModuleMenu() {
+  const dropdown = document.getElementById('moduleDropdown');
+  dropdown.classList.toggle('active');
+  document.addEventListener('click', function closeMenu(e) {
+    if (!e.target.closest('.module-switcher')) {
+      dropdown.classList.remove('active');
+      document.removeEventListener('click', closeMenu);
+    }
+  });
+}
+
+function goToModule(module) {
+  currentModule = module;
+
+  // Update active menu item
+  document.querySelectorAll('#moduleDropdown a').forEach(a => a.classList.remove('active'));
+  event.target.classList.add('active');
+
+  // Navigate to module
+  switch(module) {
+    case 'board':
+      window.location.href = '/';
+      break;
+    case 'tracking':
+      window.location.href = '/analytics#tracking';
+      break;
+    case 'analytics':
+      window.location.href = '/analytics#metrics';
+      break;
+    case 'reports':
+      window.location.href = '/analytics#reports';
+      break;
+  }
+}
 
 // Encode UTF-8 strings to base64 (handles non-Latin1 characters)
 function encodeBase64(str) {
