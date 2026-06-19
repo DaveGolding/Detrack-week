@@ -295,6 +295,40 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Manual trigger: detect stops
+  if (parsed.pathname === '/api/analytics/detect-stops') {
+    try {
+      const Scheduler = require('./lib/scheduler');
+      const dbPath = path.join(__dirname, 'data', 'database.db');
+      const scheduler = new Scheduler(dbPath);
+      scheduler.detectStops().then(count => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, stops_detected: count }));
+      });
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // Manual trigger: calculate daily metrics
+  if (parsed.pathname === '/api/analytics/calculate-metrics') {
+    try {
+      const Scheduler = require('./lib/scheduler');
+      const dbPath = path.join(__dirname, 'data', 'database.db');
+      const scheduler = new Scheduler(dbPath);
+      scheduler.calculateDailyMetrics().then(count => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, vehicles_calculated: count }));
+      });
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
   const filePath = path.join(__dirname, 'detrack-weekly-board.html');
   fs.readFile(filePath, 'utf8', (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
@@ -332,6 +366,16 @@ server.listen(PORT, '0.0.0.0', () => {
     }, 5 * 60 * 1000);
   } else {
     console.log('[vehicle-poller] Skipped — DETRACK_API_KEY not set');
+  }
+
+  // Start analytics schedulers (stop detection + metrics calculation)
+  try {
+    const Scheduler = require('./lib/scheduler');
+    const dbPath = path.join(__dirname, 'data', 'database.db');
+    const scheduler = new Scheduler(dbPath);
+    scheduler.start();
+  } catch (err) {
+    console.error('[scheduler] Failed to start:', err.message);
   }
 });
 
