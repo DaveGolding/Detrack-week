@@ -329,6 +329,85 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Report API endpoints
+  if (parsed.pathname === '/api/reports/generate') {
+    try {
+      const vehicleId = parseInt(parsed.query.vehicle_id);
+      const dateFrom = parsed.query.from;
+      const dateTo = parsed.query.to;
+      const format = parsed.query.format || 'csv'; // csv or html
+
+      if (!vehicleId || !dateFrom || !dateTo) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing parameters: vehicle_id, from, to' }));
+        return;
+      }
+
+      const ReportGenerator = require('./lib/report-generator');
+      const dbPath = path.join(__dirname, 'data', 'database.db');
+      const generator = new ReportGenerator(dbPath);
+
+      let report;
+      if (format === 'html') {
+        report = generator.generateHTML(vehicleId, dateFrom, dateTo);
+      } else {
+        report = generator.generateCSV(vehicleId, dateFrom, dateTo);
+      }
+
+      if (!report) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No data found for this vehicle and date range' }));
+        return;
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(report));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  if (parsed.pathname === '/api/reports/list') {
+    try {
+      const ReportGenerator = require('./lib/report-generator');
+      const dbPath = path.join(__dirname, 'data', 'database.db');
+      const generator = new ReportGenerator(dbPath);
+      const reports = generator.listReports();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(reports));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // Serve generated reports
+  if (parsed.pathname.startsWith('/reports/')) {
+    const filename = path.basename(parsed.pathname);
+    const filepath = path.join(__dirname, 'data', 'reports', filename);
+
+    // Safety check
+    if (!filepath.startsWith(path.join(__dirname, 'data', 'reports'))) {
+      res.writeHead(403);
+      res.end('Forbidden');
+      return;
+    }
+
+    fs.readFile(filepath, 'utf8', (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      const contentType = filename.endsWith('.csv') ? 'text/csv' : 'text/html; charset=utf-8';
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${filename}"`
+      });
+      res.end(data);
+    });
+    return;
+  }
+
   const filePath = path.join(__dirname, 'detrack-weekly-board.html');
   fs.readFile(filePath, 'utf8', (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
