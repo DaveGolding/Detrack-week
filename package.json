@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "better-sqlite3": "^9.0.0",
     "bonjour-service": "^1.4.0",
     "dotenv": "^17.4.2"
   }

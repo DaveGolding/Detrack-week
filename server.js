@@ -205,6 +205,96 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Vehicle tracking API endpoints
+  if (parsed.pathname === '/api/tracking/vehicles') {
+    try {
+      const db = new (require('better-sqlite3'))(path.join(__dirname, 'data', 'database.db'));
+      const vehicles = db.prepare(`
+        SELECT
+          v.id, v.vehicle_id, v.registration, v.vehicle_type, v.driver_name, v.active,
+          (SELECT latitude FROM vehicle_positions WHERE vehicle_id = v.id ORDER BY timestamp DESC LIMIT 1) as latest_latitude,
+          (SELECT longitude FROM vehicle_positions WHERE vehicle_id = v.id ORDER BY timestamp DESC LIMIT 1) as latest_longitude,
+          (SELECT timestamp FROM vehicle_positions WHERE vehicle_id = v.id ORDER BY timestamp DESC LIMIT 1) as latest_timestamp,
+          (SELECT speed_kmh FROM vehicle_positions WHERE vehicle_id = v.id ORDER BY timestamp DESC LIMIT 1) as latest_speed
+        FROM vehicles ORDER BY v.registration
+      `).all();
+      db.close();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(vehicles));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  if (parsed.pathname.startsWith('/api/tracking/vehicles/') && parsed.pathname.endsWith('/positions')) {
+    try {
+      const vehicleId = parseInt(parsed.pathname.split('/')[4]);
+      const hours = parseInt(parsed.query.hours) || 24;
+      const db = new (require('better-sqlite3'))(path.join(__dirname, 'data', 'database.db'));
+      const positions = db.prepare(`
+        SELECT id, vehicle_id, latitude, longitude, accuracy_meters, timestamp, speed_kmh, heading, deetrack_job_id
+        FROM vehicle_positions
+        WHERE vehicle_id = ? AND timestamp > datetime('now', '-' || ? || ' hours')
+        ORDER BY timestamp DESC LIMIT 500
+      `).all(vehicleId, hours);
+      db.close();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(positions));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  if (parsed.pathname.startsWith('/api/tracking/vehicles/') && parsed.pathname.endsWith('/stops')) {
+    try {
+      const vehicleId = parseInt(parsed.pathname.split('/')[4]);
+      const date = parsed.query.date || new Date().toISOString().split('T')[0];
+      const db = new (require('better-sqlite3'))(path.join(__dirname, 'data', 'database.db'));
+      const stops = db.prepare(`
+        SELECT vs.id, vs.vehicle_id, vs.job_location_id, vs.arrival_time, vs.departure_time, vs.duration_minutes, vs.status, vs.deetrack_job_id,
+               jl.address, jl.latitude, jl.longitude, jl.job_type
+        FROM vehicle_stops vs
+        LEFT JOIN job_locations jl ON vs.job_location_id = jl.id
+        WHERE vs.vehicle_id = ? AND date(vs.arrival_time) = ?
+        ORDER BY vs.arrival_time
+      `).all(vehicleId, date);
+      db.close();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(stops));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  if (parsed.pathname.startsWith('/api/tracking/vehicles/') && parsed.pathname.endsWith('/metrics')) {
+    try {
+      const vehicleId = parseInt(parsed.pathname.split('/')[4]);
+      const dateFrom = parsed.query.from || new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
+      const dateTo = parsed.query.to || new Date().toISOString().split('T')[0];
+      const db = new (require('better-sqlite3'))(path.join(__dirname, 'data', 'database.db'));
+      const metrics = db.prepare(`
+        SELECT id, vehicle_id, date, jobs_completed, total_stop_time_minutes, total_travel_time_minutes, total_distance_km,
+               average_stop_duration_minutes, on_time_jobs, late_jobs, utilization_percent, idle_time_minutes, return_to_depot_time
+        FROM vehicle_daily_metrics
+        WHERE vehicle_id = ? AND date BETWEEN ? AND ?
+        ORDER BY date DESC
+      `).all(vehicleId, dateFrom, dateTo);
+      db.close();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(metrics));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
   const filePath = path.join(__dirname, 'detrack-weekly-board.html');
   fs.readFile(filePath, 'utf8', (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
@@ -230,6 +320,18 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`Bonjour: advertising as ${MDNS_HOST} → ${lanIP}`);
   } catch (err) {
     console.error('Bonjour error:', err.message);
+  }
+
+  // Start vehicle position poller (every 5 minutes)
+  if (API_KEY) {
+    const { pollOnce } = require('./vehicle-poller');
+    console.log('[vehicle-poller] Starting — polling every 5 minutes');
+    pollOnce().catch(err => console.error('[vehicle-poller] Initial poll failed:', err.message));
+    setInterval(() => {
+      pollOnce().catch(err => console.error('[vehicle-poller] Poll failed:', err.message));
+    }, 5 * 60 * 1000);
+  } else {
+    console.log('[vehicle-poller] Skipped — DETRACK_API_KEY not set');
   }
 });
 
