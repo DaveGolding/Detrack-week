@@ -5,7 +5,7 @@ const path = require('path');
 const url = require('url');
 const os = require('os');
 const { Bonjour } = require('bonjour-service');
-require('dotenv').config();
+try { require('dotenv').config(); } catch (e) { console.log('[dotenv] skipped'); }
 
 const API_KEY = process.env.DETRACK_API_KEY;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
