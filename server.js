@@ -408,6 +408,17 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Serve vehicle analytics dashboard
+  if (parsed.pathname === '/analytics' || parsed.pathname === '/tracking') {
+    const filePath = path.join(__dirname, 'vehicle-analytics.html');
+    fs.readFile(filePath, 'utf8', (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(data);
+    });
+    return;
+  }
+
   const filePath = path.join(__dirname, 'detrack-weekly-board.html');
   fs.readFile(filePath, 'utf8', (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }

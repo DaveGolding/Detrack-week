@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vehicle Analytics Dashboard — DeTrack</title>
+  <link rel="stylesheet" href="https://leafletjs.com/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #1A1A1A; color: #F0F0F0; min-height: 100vh; }
+
+    .topbar {
+      background: #111;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo { font-size: 18px; font-weight: 700; color: #E8650A; display: flex; align-items: center; gap: 8px; }
+    .logo-icon { width: 32px; height: 32px; background: #E8650A; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 18px; color: white; }
+
+    .nav-tabs { display: flex; gap: 0; margin-left: auto; }
+    .nav-tab { padding: 12px 20px; cursor: pointer; border: none; background: transparent; color: #999; font-size: 14px; transition: all 0.2s; }
+    .nav-tab.active { color: #E8650A; border-bottom: 2px solid #E8650A; }
+    .nav-tab:hover { color: #F0F0F0; }
+
+    .container { display: flex; height: calc(100vh - 60px); }
+
+    .sidebar {
+      width: 300px;
+      background: #1A1A1A;
+      border-right: 1px solid rgba(255,255,255,0.1);
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .main-content {
+      flex: 1;
+      overflow: auto;
+      padding: 20px;
+    }
+
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* Map view */
+    #map { width: 100%; height: 100%; border-radius: 8px; }
+
+    /* Vehicles list */
+    .vehicle-item {
+      background: #222;
+      padding: 16px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .vehicle-item:hover { background: #2a2a2a; border-color: #E8650A; }
+    .vehicle-item.active { border-color: #E8650A; background: #222; }
+
+    .vehicle-name { font-weight: 600; color: #E8650A; }
+    .vehicle-status { font-size: 12px; color: #999; margin-top: 4px; }
+    .vehicle-speed { color: #2ECC71; font-size: 12px; margin-top: 4px; }
+
+    /* Details panel */
+    .details { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .detail-card {
+      background: #222;
+      padding: 20px;
+      border-radius: 6px;
+      border-left: 4px solid #E8650A;
+    }
+
+    .detail-label { color: #999; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+    .detail-value { font-size: 24px; font-weight: 700; color: #E8650A; margin-top: 8px; }
+
+    .stops-table {
+      background: #222;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-top: 20px;
+    }
+
+    .stops-table table { width: 100%; border-collapse: collapse; }
+    .stops-table th { background: #1A1A1A; padding: 12px; text-align: left; font-size: 12px; color: #999; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .stops-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
+    .stops-table tr:hover { background: #252525; }
+
+    /* Metrics view */
+    .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 30px; }
+    .metric-card {
+      background: #222;
+      padding: 20px;
+      border-radius: 6px;
+      border-top: 3px solid #E8650A;
+    }
+
+    .metric-label { color: #999; font-size: 12px; }
+    .metric-value { font-size: 32px; font-weight: 700; color: #E8650A; margin-top: 10px; }
+
+    /* Date picker */
+    .date-picker {
+      background: #222;
+      padding: 16px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .date-picker input {
+      background: #1A1A1A;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #F0F0F0;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .date-picker button {
+      background: #E8650A;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+
+    .date-picker button:hover { background: #D85909; }
+
+    /* Reports */
+    .report-card {
+      background: #222;
+      padding: 16px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .report-info { flex: 1; }
+    .report-name { font-weight: 600; color: #E8650A; }
+    .report-date { font-size: 12px; color: #999; margin-top: 4px; }
+
+    .report-actions { display: flex; gap: 8px; }
+    .btn-small {
+      background: #E8650A;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .btn-small:hover { background: #D85909; }
+
+    /* Loading */
+    .loading { color: #999; text-align: center; padding: 40px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo">
+      <div class="logo-icon">🚗</div>
+      Vehicle Analytics
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-tab active" onclick="switchTab('tracking')">Live Tracking</button>
+      <button class="nav-tab" onclick="switchTab('metrics')">Analytics</button>
+      <button class="nav-tab" onclick="switchTab('reports')">Reports</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Left Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div style="color:#E8650A;font-weight:600;margin-bottom:16px;">Vehicles</div>
+      <div id="vehiclesList"></div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Tracking View -->
+      <div id="tracking" class="view active">
+        <h2 style="margin-bottom:20px;">Live Vehicle Tracking</h2>
+        <div id="map" style="height: 600px;"></div>
+      </div>
+
+      <!-- Metrics View -->
+      <div id="metrics" class="view">
+        <h2 style="margin-bottom:20px;">Vehicle Analytics</h2>
+
+        <div class="date-picker">
+          <label>From:</label>
+          <input type="date" id="dateFrom">
+          <label>To:</label>
+          <input type="date" id="dateTo">
+          <button onclick="loadMetrics()">Load Metrics</button>
+        </div>
+
+        <div id="metricsContent"></div>
+      </div>
+
+      <!-- Reports View -->
+      <div id="reports" class="view">
+        <h2 style="margin-bottom:20px;">Generate & Download Reports</h2>
+
+        <div style="background:#222;padding:20px;border-radius:6px;margin-bottom:20px;">
+          <div style="margin-bottom:16px;">
+            <label>Vehicle:</label>
+            <select id="reportVehicle" style="margin-left:12px;background:#1A1A1A;border:1px solid rgba(255,255,255,0.1);color:#F0F0F0;padding:8px 12px;border-radius:4px;">
+            </select>
+          </div>
+          <div style="margin-bottom:16px;">
+            <label>From:</label>
+            <input type="date" id="reportFrom" style="margin-left:12px;background:#1A1A1A;border:1px solid rgba(255,255,255,0.1);color:#F0F0F0;padding:8px 12px;border-radius:4px;">
+          </div>
+          <div style="margin-bottom:16px;">
+            <label>To:</label>
+            <input type="date" id="reportTo" style="margin-left:12px;background:#1A1A1A;border:1px solid rgba(255,255,255,0.1);color:#F0F0F0;padding:8px 12px;border-radius:4px;">
+          </div>
+          <button onclick="generateReport('csv')" style="background:#E8650A;color:white;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;margin-right:8px;">📊 Generate CSV</button>
+          <button onclick="generateReport('html')" style="background:#E8650A;color:white;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;">📄 Generate HTML</button>
+        </div>
+
+        <div style="color:#E8650A;font-weight:600;margin-bottom:16px;">Recent Reports</div>
+        <div id="reportsList"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://leafletjs.com/dist/leaflet.js"></script>
+  <script>
+    let map;
+    let selectedVehicleId = null;
+    let vehicleMarkers = {};
+
+    // Initialize
+    function init() {
+      loadVehicles();
+      setDateRanges();
+      setupMap();
+      loadReportsList();
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById(tab).classList.add('active');
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+
+      if (tab === 'tracking' && map) {
+        map.invalidateSize();
+      }
+    }
+
+    function setupMap() {
+      map = L.map('map', {
+        center: [-31.95, 115.86],
+        zoom: 11,
+        maxBounds: [[-33, 114], [-31, 117]]
+      });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap',
+        maxZoom: 19
+      }).addTo(map);
+    }
+
+    function loadVehicles() {
+      fetch('/api/tracking/vehicles')
+        .then(r => r.json())
+        .then(vehicles => {
+          const html = vehicles.map(v => `
+            <div class="vehicle-item ${!selectedVehicleId || selectedVehicleId===v.id ? 'active' : ''}" onclick="selectVehicle(${v.id})">
+              <div class="vehicle-name">${v.registration || v.vehicle_id}</div>
+              <div class="vehicle-status">
+                ${v.latest_latitude ? `📍 ${v.latest_latitude.toFixed(4)}, ${v.latest_longitude.toFixed(4)}` : 'No position'}
+              </div>
+              ${v.latest_speed ? `<div class="vehicle-speed">⚡ ${v.latest_speed} km/h</div>` : ''}
+            </div>
+          `).join('');
+          document.getElementById('vehiclesList').innerHTML = html;
+
+          // Populate reports dropdown
+          const reportSelect = document.getElementById('reportVehicle');
+          reportSelect.innerHTML = vehicles.map(v => `<option value="${v.id}">${v.registration || v.vehicle_id}</option>`).join('');
+
+          if (vehicles.length > 0 && !selectedVehicleId) {
+            selectVehicle(vehicles[0].id);
+          }
+
+          // Update map
+          updateMap(vehicles);
+        })
+        .catch(err => console.error('Error loading vehicles:', err));
+    }
+
+    function selectVehicle(vehicleId) {
+      selectedVehicleId = vehicleId;
+      document.querySelectorAll('.vehicle-item').forEach(v => v.classList.remove('active'));
+      event.target.closest('.vehicle-item').classList.add('active');
+      loadVehicleDetails(vehicleId);
+    }
+
+    function updateMap(vehicles) {
+      vehicles.forEach(v => {
+        if (v.latest_latitude && v.latest_longitude) {
+          if (vehicleMarkers[v.id]) {
+            vehicleMarkers[v.id].setLatLng([v.latest_latitude, v.latest_longitude]);
+          } else {
+            const marker = L.circleMarker([v.latest_latitude, v.latest_longitude], {
+              radius: 8,
+              fillColor: '#E8650A',
+              color: '#fff',
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.8
+            }).bindPopup(`${v.registration || v.vehicle_id}<br/>Speed: ${v.latest_speed || 0} km/h`).addTo(map);
+            vehicleMarkers[v.id] = marker;
+          }
+        }
+      });
+    }
+
+    function loadVehicleDetails(vehicleId) {
+      const today = new Date().toISOString().split('T')[0];
+      fetch(`/api/tracking/vehicles/${vehicleId}/stops?date=${today}`)
+        .then(r => r.json())
+        .then(stops => {
+          const html = `
+            <div class="details">
+              <div class="detail-card">
+                <div class="detail-label">Today's Stops</div>
+                <div class="detail-value">${stops.length}</div>
+              </div>
+              <div class="detail-card">
+                <div class="detail-label">Total Stop Time</div>
+                <div class="detail-value">${stops.reduce((sum, s) => sum + (s.duration_minutes || 0), 0)}m</div>
+              </div>
+            </div>
+            ${stops.length > 0 ? `
+            <div class="stops-table">
+              <table>
+                <thead><tr>
+                  <th>Arrival</th>
+                  <th>Departure</th>
+                  <th>Duration</th>
+                  <th>Location</th>
+                </tr></thead>
+                <tbody>
+                  ${stops.map(s => `<tr>
+                    <td>${new Date(s.arrival_time).toLocaleTimeString()}</td>
+                    <td>${s.departure_time ? new Date(s.departure_time).toLocaleTimeString() : 'Still there'}</td>
+                    <td>${s.duration_minutes}m</td>
+                    <td>${s.address || 'Unknown'}</td>
+                  </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+            ` : '<div class="loading">No stops today</div>'}
+          `;
+          document.querySelector('.main-content').innerHTML = html;
+        });
+    }
+
+    function setDateRanges() {
+      const today = new Date();
+      const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const formatDate = (d) => d.toISOString().split('T')[0];
+      document.getElementById('dateFrom').value = formatDate(thirtyDaysAgo);
+      document.getElementById('dateTo').value = formatDate(today);
+      document.getElementById('reportFrom').value = formatDate(thirtyDaysAgo);
+      document.getElementById('reportTo').value = formatDate(today);
+    }
+
+    function loadMetrics() {
+      if (!selectedVehicleId) return;
+      const from = document.getElementById('dateFrom').value;
+      const to = document.getElementById('dateTo').value;
+
+      fetch(`/api/tracking/vehicles/${selectedVehicleId}/metrics?from=${from}&to=${to}`)
+        .then(r => r.json())
+        .then(metrics => {
+          if (metrics.length === 0) {
+            document.getElementById('metricsContent').innerHTML = '<div class="loading">No data available</div>';
+            return;
+          }
+
+          const avg = (arr, key) => Math.round(arr.reduce((s, m) => s + m[key], 0) / arr.length);
+          const total = (arr, key) => arr.reduce((s, m) => s + m[key], 0);
+
+          const html = `
+            <div class="metrics-grid">
+              <div class="metric-card">
+                <div class="metric-label">Total Jobs</div>
+                <div class="metric-value">${total(metrics, 'jobs_completed')}</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">Avg Utilization</div>
+                <div class="metric-value">${avg(metrics, 'utilization_percent')}%</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">Total Distance</div>
+                <div class="metric-value">${Math.round(total(metrics, 'total_distance_km'))}km</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">On-Time %</div>
+                <div class="metric-value">${Math.round(total(metrics, 'on_time_jobs') / (total(metrics, 'on_time_jobs') + total(metrics, 'late_jobs')) * 100 || 0)}%</div>
+              </div>
+            </div>
+
+            <table style="width:100%;border-collapse:collapse;background:#222;border-radius:6px;overflow:hidden;">
+              <thead style="background:#1A1A1A;"><tr>
+                <th style="padding:12px;text-align:left;font-size:12px;color:#999;border-bottom:1px solid rgba(255,255,255,0.1);">Date</th>
+                <th style="padding:12px;text-align:left;font-size:12px;color:#999;border-bottom:1px solid rgba(255,255,255,0.1);">Jobs</th>
+                <th style="padding:12px;text-align:left;font-size:12px;color:#999;border-bottom:1px solid rgba(255,255,255,0.1);">Utilization</th>
+                <th style="padding:12px;text-align:left;font-size:12px;color:#999;border-bottom:1px solid rgba(255,255,255,0.1);">Distance</th>
+                <th style="padding:12px;text-align:left;font-size:12px;color:#999;border-bottom:1px solid rgba(255,255,255,0.1);">On-Time</th>
+              </tr></thead>
+              <tbody>
+                ${metrics.map(m => `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                  <td style="padding:10px 12px;font-size:13px;">${m.date}</td>
+                  <td style="padding:10px 12px;font-size:13px;">${m.jobs_completed}</td>
+                  <td style="padding:10px 12px;font-size:13px;">${m.utilization_percent}%</td>
+                  <td style="padding:10px 12px;font-size:13px;">${m.total_distance_km}km</td>
+                  <td style="padding:10px 12px;font-size:13px;">${m.on_time_jobs}/${m.on_time_jobs+m.late_jobs}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          `;
+          document.getElementById('metricsContent').innerHTML = html;
+        });
+    }
+
+    function generateReport(format) {
+      const vehicleId = document.getElementById('reportVehicle').value;
+      const from = document.getElementById('reportFrom').value;
+      const to = document.getElementById('reportTo').value;
+
+      fetch(`/api/reports/generate?vehicle_id=${vehicleId}&from=${from}&to=${to}&format=${format}`)
+        .then(r => r.json())
+        .then(result => {
+          alert('Report generated: ' + result.filename);
+          loadReportsList();
+        })
+        .catch(err => alert('Error: ' + err.message));
+    }
+
+    function loadReportsList() {
+      fetch('/api/reports/list')
+        .then(r => r.json())
+        .then(reports => {
+          const html = reports.map(r => `
+            <div class="report-card">
+              <div class="report-info">
+                <div class="report-name">${r.filename}</div>
+                <div class="report-date">${new Date(r.created).toLocaleString()}</div>
+              </div>
+              <div class="report-actions">
+                <a href="${r.path}" class="btn-small" download>⬇️ Download</a>
+              </div>
+            </div>
+          `).join('');
+          document.getElementById('reportsList').innerHTML = html || '<div class="loading">No reports yet</div>';
+        });
+    }
+
+    // Start app
+    init();
+  </script>
+</body>
+</html>
