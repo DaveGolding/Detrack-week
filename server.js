@@ -7,8 +7,22 @@ const os = require('os');
 const { Bonjour } = require('bonjour-service');
 try { require('dotenv').config(); } catch (e) { console.log('[dotenv] skipped'); }
 
+// Load .env file directly
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
+    const [key, value] = line.trim().split('=');
+    if (key && value && !process.env[key]) process.env[key] = value;
+  });
+}
+
 const API_KEY = process.env.DETRACK_API_KEY;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+
+// Get Bearer token from .env (will be read dynamically)
+function getDetrackToken() {
+  return process.env.DETRACK_BEARER_TOKEN || '';
+}
 const PORT = 80;
 const MDNS_HOST = 'detrack-schedule.local';
 
@@ -206,17 +220,460 @@ const server = http.createServer((req, res) => {
   }
 
   // Vehicle tracking API endpoints
+  // Get tracking route for a vehicle and date
+  // Download and parse export file
+  function downloadAndParse(downloadUrl, vehicle, res) {
+    const https = require('https');
+    const { execSync } = require('child_process');
+
+    https.get(downloadUrl, (downloadRes) => {
+      const chunks = [];
+      downloadRes.on('data', chunk => chunks.push(chunk));
+      downloadRes.on('end', () => {
+        try {
+          const tempDir = path.join(__dirname, 'data', 'export-temp-' + Date.now());
+          fs.mkdirSync(tempDir, { recursive: true });
+          const excelPath = path.join(tempDir, 'export.xlsx');
+          fs.writeFileSync(excelPath, Buffer.concat(chunks));
+
+          execSync(`unzip -q "${excelPath}" -d "${tempDir}/extracted"`, { stdio: 'ignore' });
+          const xml = fs.readFileSync(path.join(tempDir, 'extracted', 'xl', 'worksheets', 'sheet1.xml'), 'utf8');
+
+          const rows = [];
+          const rowMatches = xml.match(/<row[^>]*>.*?<\/row>/gs) || [];
+          rowMatches.forEach(rowXml => {
+            const cells = [];
+            const cellMatches = rowXml.match(/<c[^>]*>.*?<\/c>/g) || [];
+            cellMatches.forEach(cellXml => {
+              const valueMatch = cellXml.match(/<v>(.*?)<\/v>/);
+              const textMatch = cellXml.match(/<t>(.*?)<\/t>/);
+              const value = textMatch ? textMatch[1] : (valueMatch ? valueMatch[1] : '');
+              cells.push(value);
+            });
+            if (cells.length > 0) rows.push(cells);
+          });
+
+          const routeData = rows.slice(1).map(row => ({
+            location: row[0],
+            time: row[1],
+            lat: parseFloat(row[2]),
+            lng: parseFloat(row[3]),
+            speed: parseFloat(row[4]),
+            mileage: parseFloat(row[5])
+          })).filter(r => r.lat && r.lng);
+
+          fs.writeFileSync(path.join(__dirname, 'data', 'detrack-route.json'), JSON.stringify(routeData, null, 2));
+          fs.rmSync(tempDir, { recursive: true });
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, points: routeData.length, vehicle: vehicle.driver_name }));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to parse export: ' + e.message }));
+        }
+      });
+    }).on('error', (e) => {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Download failed: ' + e.message }));
+    });
+  }
+
+  // Poll export status until ready
+  function pollExportStatus(exportId, maxAttempts = 30) {
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+
+      function check() {
+        const https = require('https');
+        https.get({
+          hostname: 'app.detrack.com',
+          path: `/api/v2/exports/${exportId}`,
+          headers: { 'Authorization': `Bearer ${getDetrackToken()}` }
+        }, (res) => {
+          let data = '';
+          res.on('data', chunk => data += chunk);
+          res.on('end', () => {
+            try {
+              const result = JSON.parse(data);
+              if (result.data?.download_url) {
+                resolve(result.data.download_url);
+              } else if (attempts < maxAttempts) {
+                attempts++;
+                setTimeout(check, 1000);
+              } else {
+                reject(new Error('Export timeout'));
+              }
+            } catch (e) {
+              reject(e);
+            }
+          });
+        }).on('error', reject);
+      }
+
+      check();
+    });
+  }
+
+  // Live tracking disabled
+  if (parsed.pathname.startsWith('/api/tracking/')) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Live tracking feature has been disabled' }));
+    return;
+  }
+
+  // Fetch fresh export from Detrack (with polling)
+  if (parsed.pathname.startsWith('/api/tracking/fetch-detrack-export')) {
+    console.log('[fetch-detrack-export] Handler executing for vehicle_id:', parsed.query.vehicle_id);
+    try {
+      const vehicleId = parseInt(parsed.query.vehicle_id);
+      const date = parsed.query.date || new Date().toISOString().split('T')[0];
+
+      if (!vehicleId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'vehicle_id required' }));
+        return;
+      }
+
+      const db = new (require('better-sqlite3'))(path.join(__dirname, 'data', 'database.db'));
+      const vehicle = db.prepare('SELECT vehicle_id, driver_name FROM vehicles WHERE id = ?').get(vehicleId);
+      db.close();
+
+      if (!vehicle) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Vehicle not found' }));
+        return;
+      }
+
+      // Create export via Detrack API
+      const https = require('https');
+      const payload = JSON.stringify({
+        data: {
+          date: date,
+          format: 'xlsx',
+          document: 'vehicle-route',
+          query: {
+            id: vehicle.vehicle_id,
+            name: vehicle.driver_name
+          }
+        }
+      });
+
+      const createExportOptions = {
+        hostname: 'app.detrack.com',
+        path: '/api/v2/exports/vehicles',
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getDetrackToken()}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      };
+
+      const createReq = https.request(createExportOptions, (createRes) => {
+        let data = '';
+        createRes.on('data', chunk => data += chunk);
+        createRes.on('end', () => {
+          // Handle token expiry
+          if (createRes.statusCode === 401) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              error: 'Token expired',
+              message: 'Your Detrack bearer token has expired. Please get a fresh one:\n1. Go to Detrack dashboard\n2. Open F12 → Network tab\n3. Click "Download Route"\n4. Find POST /api/v2/exports/vehicles\n5. Copy the "Bearer ..." token from Authorization header\n6. Update .env DETRACK_BEARER_TOKEN with the new token\n7. Restart the server'
+            }));
+            return;
+          }
+
+          try {
+            const exportData = JSON.parse(data);
+            const exportId = exportData.data?.id;
+            const downloadUrl = exportData.data?.download_url;
+
+            console.log('[fetch-detrack-export] Export response:', { exportId, hasDownloadUrl: !!downloadUrl, status: exportData.data?.status });
+
+            if (!exportId) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'UNIQUE_ERROR_NO_EXPORT_ID_RETURNED_FROM_DETRACK' }));
+              return;
+            }
+
+            // If download_url is already available, use it directly
+            if (downloadUrl) {
+              console.log('[fetch-detrack-export] Download URL ready immediately');
+              downloadAndParse(downloadUrl, vehicle, res);
+              return;
+            }
+
+            // Otherwise poll until export is ready
+            pollExportStatus(exportId).then((downloadUrl) => {
+              console.log('[fetch-detrack-export] Download URL ready after polling');
+              downloadAndParse(downloadUrl, vehicle, res);
+            }).catch((e) => {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Export failed to complete: ' + e.message }));
+            });
+          } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to create export: ' + e.message }));
+          }
+        });
+      });
+
+      createReq.on('error', (e) => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Export request failed: ' + e.message }));
+      });
+
+      createReq.write(payload);
+      createReq.end();
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // Download and parse Detrack export URL
+  if (parsed.pathname.startsWith('/api/tracking/import-export')) {
+    try {
+      const exportUrl = parsed.query.url;
+      if (!exportUrl) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'url parameter required' }));
+        return;
+      }
+
+      const https = require('https');
+      const AdmZip = require('adm-zip');
+
+      https.get(exportUrl, (response) => {
+        const chunks = [];
+        response.on('data', chunk => chunks.push(chunk));
+        response.on('end', () => {
+          try {
+            const zip = new AdmZip(Buffer.concat(chunks));
+            const xml = zip.readAsText('xl/worksheets/sheet1.xml');
+
+            // Parse XML
+            const rows = [];
+            const rowMatches = xml.match(/<row[^>]*>.*?<\/row>/gs) || [];
+            rowMatches.forEach(rowXml => {
+              const cells = [];
+              const cellMatches = rowXml.match(/<c[^>]*>.*?<\/c>/g) || [];
+              cellMatches.forEach(cellXml => {
+                const valueMatch = cellXml.match(/<v>(.*?)<\/v>/);
+                const textMatch = cellXml.match(/<t>(.*?)<\/t>/);
+                const value = textMatch ? textMatch[1] : (valueMatch ? valueMatch[1] : '');
+                cells.push(value);
+              });
+              if (cells.length > 0) rows.push(cells);
+            });
+
+            const data = rows.slice(1).map(row => ({
+              location: row[0],
+              time: row[1],
+              lat: parseFloat(row[2]),
+              lng: parseFloat(row[3]),
+              speed: parseFloat(row[4]),
+              mileage: parseFloat(row[5])
+            })).filter(r => r.lat && r.lng);
+
+            // Save and return
+            fs.writeFileSync(path.join(__dirname, 'data', 'detrack-route.json'), JSON.stringify(data, null, 2));
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, points: data.length }));
+          } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Failed to parse Excel: ' + e.message }));
+          }
+        });
+      }).on('error', (e) => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to download: ' + e.message }));
+      });
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (parsed.pathname.startsWith('/api/tracking/route')) {
+    try {
+      const vehicleId = parseInt(parsed.query.vehicle_id);
+      const date = parsed.query.date || new Date().toISOString().split('T')[0];
+
+      if (!vehicleId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'vehicle_id required' }));
+        return;
+      }
+
+      const db = new (require('better-sqlite3'))(path.join(__dirname, 'data', 'database.db'));
+
+      // Get vehicle info
+      const vehicle = db.prepare('SELECT driver_name FROM vehicles WHERE id = ?').get(vehicleId);
+
+      if (!vehicle) {
+        db.close();
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Vehicle not found' }));
+        return;
+      }
+
+      let positions = [];
+      let dataSource = 'local';
+
+      // Try to load from cached Detrack export (most recent)
+      const detrackRoutePath = path.join(__dirname, 'data', 'detrack-route.json');
+      if (fs.existsSync(detrackRoutePath)) {
+        try {
+          const detrackData = JSON.parse(fs.readFileSync(detrackRoutePath, 'utf8'));
+          positions = detrackData.map(p => ({
+            latitude: p.lat,
+            longitude: p.lng,
+            speed_kmh: p.speed,
+            timestamp: p.time,
+            address: p.location,
+            mileage: p.mileage
+          }));
+          dataSource = 'detrack_export';
+          console.log(`[tracking-route] Loaded ${positions.length} points from Detrack export`);
+        } catch (e) {
+          console.log('[tracking-route] Failed to parse Detrack export:', e.message);
+        }
+      }
+
+      // Fallback to local database if no Detrack export
+      if (positions.length === 0) {
+        const localPositions = db.prepare(`
+          SELECT latitude, longitude, speed_kmh, timestamp
+          FROM vehicle_positions
+          WHERE vehicle_id = ? AND date(timestamp) = ?
+          ORDER BY timestamp ASC
+        `).all(vehicleId, date);
+
+        positions = localPositions || [];
+        dataSource = 'local';
+      }
+
+      db.close();
+
+      // Identify stops - cluster consecutive low-speed points
+      const stops = [];
+      let currentStop = null;
+
+      for (let i = 0; i < positions.length; i++) {
+        const pos = positions[i];
+        const speed = pos.speed_kmh || 0;
+        const isStopped = speed < 5; // Less than 5 km/h = stopped
+
+        if (isStopped) {
+          if (!currentStop) {
+            // Start new stop
+            currentStop = {
+              latitude: pos.latitude,
+              longitude: pos.longitude,
+              address: pos.address,
+              startTime: pos.timestamp,
+              endTime: pos.timestamp,
+              positions: [pos]
+            };
+          } else {
+            // Continue current stop
+            currentStop.endTime = pos.timestamp;
+            currentStop.positions.push(pos);
+          }
+        } else {
+          // Not stopped - save current stop if exists
+          if (currentStop && currentStop.positions.length > 0) {
+            // Calculate duration from timestamps
+            const startTime = new Date(currentStop.startTime.includes('AM') || currentStop.startTime.includes('PM')
+              ? currentStop.startTime
+              : currentStop.startTime);
+            const endTime = new Date(currentStop.endTime.includes('AM') || currentStop.endTime.includes('PM')
+              ? currentStop.endTime
+              : currentStop.endTime);
+
+            const duration = Math.round((endTime - startTime) / 1000 / 60) || currentStop.positions.length;
+
+            if (duration >= 1) { // Only save stops longer than 1 minute
+              stops.push({
+                latitude: currentStop.latitude,
+                longitude: currentStop.longitude,
+                address: currentStop.address,
+                startTime: currentStop.startTime,
+                endTime: currentStop.endTime,
+                duration: Math.max(duration, 1),
+                positions: currentStop.positions.length
+              });
+            }
+          }
+          currentStop = null;
+        }
+      }
+
+      // Save final stop if exists
+      if (currentStop && currentStop.positions.length > 0) {
+        const duration = currentStop.positions.length;
+        if (duration >= 1) {
+          stops.push({
+            latitude: currentStop.latitude,
+            longitude: currentStop.longitude,
+            address: currentStop.address,
+            startTime: currentStop.startTime,
+            endTime: currentStop.endTime,
+            duration: Math.max(duration, 1),
+            positions: currentStop.positions.length
+          });
+        }
+      }
+
+      // Format stops - convert timestamps properly
+      const formattedStops = stops.map(stop => {
+        const startTimeStr = typeof stop.startTime === 'string' ? stop.startTime : stop.startTime;
+        const endTimeStr = typeof stop.endTime === 'string' ? stop.endTime : stop.endTime;
+        const duration = typeof stop.duration === 'number' ? stop.duration : stop.positions || 1;
+
+        return {
+          latitude: stop.latitude,
+          longitude: stop.longitude,
+          address: stop.address || '',
+          startTime: startTimeStr,
+          endTime: endTimeStr,
+          duration: duration,
+          jobs: []
+        };
+      });
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        vehicle: vehicle ? vehicle.driver_name : '',
+        date: date,
+        positions: positions,
+        stops: formattedStops,
+        totalPoints: positions.length,
+        jobs: 0,
+        dataSource: dataSource
+      }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
   if (parsed.pathname === '/api/tracking/vehicles') {
     try {
       const db = new (require('better-sqlite3'))(path.join(__dirname, 'data', 'database.db'));
       const vehicles = db.prepare(`
         SELECT
-          v.id, v.vehicle_id, v.registration, v.vehicle_type, v.driver_name, v.active,
-          (SELECT latitude FROM vehicle_positions WHERE vehicle_id = v.id ORDER BY timestamp DESC LIMIT 1) as latest_latitude,
-          (SELECT longitude FROM vehicle_positions WHERE vehicle_id = v.id ORDER BY timestamp DESC LIMIT 1) as latest_longitude,
-          (SELECT timestamp FROM vehicle_positions WHERE vehicle_id = v.id ORDER BY timestamp DESC LIMIT 1) as latest_timestamp,
-          (SELECT speed_kmh FROM vehicle_positions WHERE vehicle_id = v.id ORDER BY timestamp DESC LIMIT 1) as latest_speed
-        FROM vehicles ORDER BY v.registration
+          id, vehicle_id, registration, vehicle_type, driver_name, active,
+          (SELECT latitude FROM vehicle_positions WHERE vehicle_id = vehicles.id ORDER BY timestamp DESC LIMIT 1) as latest_latitude,
+          (SELECT longitude FROM vehicle_positions WHERE vehicle_id = vehicles.id ORDER BY timestamp DESC LIMIT 1) as latest_longitude,
+          (SELECT timestamp FROM vehicle_positions WHERE vehicle_id = vehicles.id ORDER BY timestamp DESC LIMIT 1) as latest_timestamp,
+          (SELECT speed_kmh FROM vehicle_positions WHERE vehicle_id = vehicles.id ORDER BY timestamp DESC LIMIT 1) as latest_speed
+        FROM vehicles ORDER BY registration
       `).all();
       db.close();
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -343,25 +800,37 @@ const server = http.createServer((req, res) => {
         return;
       }
 
+      // Get vehicle name from database
+      const db = new (require('better-sqlite3'))(path.join(__dirname, 'data', 'database.db'));
+      const vehicle = db.prepare('SELECT driver_name FROM vehicles WHERE id = ?').get(vehicleId);
+      const vehicleName = vehicle ? vehicle.driver_name : '';
+      db.close();
+
+      // Fetch jobs from Detrack for the date range
+      const DeetrackClient = require('./lib/deetrack-client');
+      const client = new DeetrackClient(API_KEY);
+
+      // Use GPS tracking data for reports (Download Route)
       const ReportGenerator = require('./lib/report-generator');
       const dbPath = path.join(__dirname, 'data', 'database.db');
       const generator = new ReportGenerator(dbPath);
 
-      let report;
-      if (format === 'html') {
-        report = generator.generateHTML(vehicleId, dateFrom, dateTo);
-      } else {
-        report = generator.generateCSV(vehicleId, dateFrom, dateTo);
+      try {
+        const report = generator.generateTrackingReport(vehicleId, dateFrom, dateTo, format);
+
+        if (!report) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No tracking data found for this vehicle and date range' }));
+          return;
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(report));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Error generating tracking report: ' + err.message }));
       }
 
-      if (!report) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'No data found for this vehicle and date range' }));
-        return;
-      }
-
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(report));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
@@ -408,6 +877,21 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Serve favicon
+  if (parsed.pathname === '/favicon.ico') {
+    try {
+      const faviconPath = path.join(__dirname, 'favicon.ico');
+      const favicon = fs.readFileSync(faviconPath);
+      res.writeHead(200, { 'Content-Type': 'image/x-icon', 'Cache-Control': 'public, max-age=86400' });
+      res.end(favicon);
+      return;
+    } catch (e) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+  }
+
   // Serve vehicle analytics dashboard
   if (parsed.pathname === '/analytics' || parsed.pathname === '/tracking') {
     const filePath = path.join(__dirname, 'vehicle-analytics.html');
@@ -446,17 +930,8 @@ server.listen(PORT, '0.0.0.0', () => {
     console.error('Bonjour error:', err.message);
   }
 
-  // Start vehicle position poller (every 5 minutes)
-  if (API_KEY) {
-    const { pollOnce } = require('./vehicle-poller');
-    console.log('[vehicle-poller] Starting — polling every 5 minutes');
-    pollOnce().catch(err => console.error('[vehicle-poller] Initial poll failed:', err.message));
-    setInterval(() => {
-      pollOnce().catch(err => console.error('[vehicle-poller] Poll failed:', err.message));
-    }, 5 * 60 * 1000);
-  } else {
-    console.log('[vehicle-poller] Skipped — DETRACK_API_KEY not set');
-  }
+  // Vehicle position poller disabled
+  console.log('[vehicle-poller] Disabled — live tracking removed');
 
   // Start analytics schedulers (stop detection + metrics calculation)
   try {
